@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -17,19 +17,21 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    authClient.getSession().then((session) => {
+      if (session?.user) router.push("/library");
+    });
+  }, [router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const { error: authError } = await authClient.signUp.email({
-      name,
-      email,
-      password,
-    });
+    const result = await authClient.signUp(name, email, password);
 
-    if (authError) {
-      setError(authError.message || "Failed to create account");
+    if (result.error) {
+      setError(result.error.message || "Failed to create account");
       setLoading(false);
       return;
     }

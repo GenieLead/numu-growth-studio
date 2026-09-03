@@ -21,25 +21,24 @@ interface Project {
 
 export default function LibraryPage() {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    if (!isPending && !session) {
-      router.push("/login");
-    }
-  }, [session, isPending, router]);
-
-  useEffect(() => {
-    if (session) {
-      fetchProjects();
-    }
-  }, [session]);
+    authClient.getSession().then((session) => {
+      if (!session?.user) {
+        router.push("/login");
+      } else {
+        setAuthChecked(true);
+        fetchProjects();
+      }
+    });
+  }, [router]);
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch("/api/projects");
+      const res = await fetch("/api/projects", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setProjects(data.projects || []);
@@ -56,6 +55,7 @@ export default function LibraryPage() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ title: "Untitled" }),
       });
       if (res.ok) {
@@ -67,7 +67,7 @@ export default function LibraryPage() {
     }
   };
 
-  if (isPending || !session) {
+  if (!authChecked) {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-full">

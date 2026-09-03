@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -31,8 +31,14 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = authClient.useSession();
+  const [session, setSession] = useState<any>(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    authClient.getSession().then((s) => {
+      if (s?.user) setSession(s);
+    });
+  }, []);
 
   const handleSignOut = async () => {
     await authClient.signOut();

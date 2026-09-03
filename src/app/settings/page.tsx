@@ -13,7 +13,7 @@ import { Key, DollarSign, Check, X, ExternalLink } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const [session, setSession] = useState<any>(null);
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [connected, setConnected] = useState(false);
   const [last4, setLast4] = useState("");
@@ -22,20 +22,19 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    if (!isPending && !session) {
-      router.push("/login");
-    }
-  }, [session, isPending, router]);
-
-  useEffect(() => {
-    if (session) {
-      fetchSettings();
-    }
-  }, [session]);
+    authClient.getSession().then((s) => {
+      if (!s?.user) {
+        router.push("/login");
+      } else {
+        setSession(s);
+        fetchSettings();
+      }
+    });
+  }, [router]);
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch("/api/settings", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setConnected(data.connected || false);
@@ -55,6 +54,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ openrouterKey }),
       });
 
@@ -76,6 +76,7 @@ export default function SettingsPage() {
       await fetch("/api/settings", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ type: "openrouter" }),
       });
       setConnected(false);
@@ -91,6 +92,7 @@ export default function SettingsPage() {
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ budget: budget ? parseFloat(budget) : null }),
       });
     } catch (error) {
@@ -100,7 +102,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (isPending || !session) {
+  if (!session) {
     return (
       <AppShell>
         <div className="flex items-center justify-center h-full">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -16,18 +16,21 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    authClient.getSession().then((session) => {
+      if (session?.user) router.push("/library");
+    });
+  }, [router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const { error: authError } = await authClient.signIn.email({
-      email,
-      password,
-    });
+    const result = await authClient.signIn(email, password);
 
-    if (authError) {
-      setError(authError.message || "Invalid email or password");
+    if (result.error) {
+      setError(result.error.message || "Invalid email or password");
       setLoading(false);
       return;
     }

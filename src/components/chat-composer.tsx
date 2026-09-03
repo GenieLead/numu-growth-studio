@@ -111,58 +111,19 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
 
     for (const file of Array.from(files)) {
       try {
-        let data: any;
+        const formData = new FormData();
+        formData.append("file", file);
+        if (projectId) formData.append("projectId", projectId);
 
-        if (file.size > 4 * 1024 * 1024) {
-          // Large file: presign then upload directly
-          const presignRes = await fetch("/api/assets/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ filename: file.name, contentType: file.type, projectId }),
-          });
-          const presignData = await presignRes.json();
+        const res = await fetch("/api/assets/upload", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+          signal: AbortSignal.timeout(180000), // 3 min for large videos
+        });
 
-          if (!presignRes.ok) throw new Error(presignData.error);
-
-          // Upload directly to Blob
-          await fetch(presignData.presignedUrl, {
-            method: "PUT",
-            body: file,
-            headers: { "Content-Type": file.type },
-          });
-
-          // Save metadata
-          const metaRes = await fetch("/api/assets/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              url: `/api/assets/proxy?url=${encodeURIComponent(presignData.presignedUrl.split("?")[0])}`,
-              pathname: presignData.pathname,
-              name: file.name,
-              mimeType: file.type,
-              size: file.size,
-              projectId,
-            }),
-          });
-          data = await metaRes.json();
-        } else {
-          // Small file: upload via FormData
-          const formData = new FormData();
-          formData.append("file", file);
-          if (projectId) formData.append("projectId", projectId);
-
-          const res = await fetch("/api/assets/upload", {
-            method: "POST",
-            credentials: "include",
-            body: formData,
-            signal: AbortSignal.timeout(60000),
-          });
-          data = await res.json();
-        }
-
-        if (data?.assetId) {
+        if (res.ok) {
+          const data = await res.json();
           const newAtt: UploadedFile = {
             assetId: data.assetId,
             url: data.url,
@@ -189,7 +150,8 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
             };
           }
         } else {
-          console.error("Upload failed:", data?.error || "Unknown error");
+          const err = await res.json().catch(() => ({}));
+          console.error("Upload failed:", err.error || res.statusText);
         }
       } catch (error) {
         console.error("Upload failed:", error);

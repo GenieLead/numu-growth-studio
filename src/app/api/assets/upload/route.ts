@@ -1,3 +1,7 @@
+export const runtime = "nodejs";
+export const maxDuration = 60;
+export const maxSize = 100; // 100MB
+
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { put } from "@vercel/blob";
@@ -18,10 +22,6 @@ export async function POST(request: Request) {
   const projectId = formData.get("projectId") as string | null;
 
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
-
-  if (file.size > 100 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large (max 100MB)" }, { status: 400 });
-  }
 
   const ext = file.name.split(".").pop() || "bin";
   const path = `${user.id}/${projectId || "general"}/${crypto.randomUUID()}.${ext}`;

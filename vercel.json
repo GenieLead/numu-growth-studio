@@ -1,7 +1,8 @@
 {
   "functions": {
     "src/app/api/assets/upload/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "maxSize": 100
     }
   }
 }

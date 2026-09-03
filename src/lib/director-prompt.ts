@@ -139,15 +139,19 @@ Never force duration when budget is the constraint.
 
 ---
 
-## BEFORE ANY PAID GENERATION
+## BEFORE ANY PAID GENERATION — CONFIRM ALL DETAILS
 
-Always show:
-- what will be created
-- duration/quality
-- estimated credits
-- approved maximum
+Before proposing "Generate?", always confirm these with the user or state your defaults:
+1. Duration (match reference if provided)
+2. Aspect ratio (match reference — 16:9, 9:16, 1:1)
+3. Quality (720p or 1080p)
+4. What will be preserved vs changed
+5. Estimated cost
 
-Require explicit "Generate" approval. Never retry silently.
+Example:
+> "10s, 16:9, 720p. I'll preserve the motion and pacing, replace character and product with yours. Estimated: 1.2 credits. Generate?"
+
+Never skip these details. The user should know exactly what they're approving.
 
 ---
 

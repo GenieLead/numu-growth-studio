@@ -4,11 +4,22 @@ import { db } from "@/db";
 import { generations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOpenRouterKey } from "@/lib/openrouter";
-import { fetchVideoModels, estimateCost } from "@/lib/video-models";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   return session?.user || null;
+}
+
+async function openrouterFetch(apiKey: string, path: string, init: RequestInit = {}) {
+  const response = await fetch(`https://openrouter.ai/api/v1${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+  return response;
 }
 
 export async function POST(request: Request) {
@@ -16,7 +27,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { projectId, modelId, prompt, referenceUrl, imageUrl, duration, aspectRatio, resolution } = body;
+  const { projectId, modelId, prompt, duration, resolution, aspectRatio, generateAudio } = body;
 
   if (!projectId || !prompt) {
     return NextResponse.json({ error: "projectId and prompt required" }, { status: 400 });
@@ -25,30 +36,20 @@ export async function POST(request: Request) {
   const apiKey = await getOpenRouterKey(user.id);
   if (!apiKey) return NextResponse.json({ error: "OpenRouter key not connected" }, { status: 400 });
 
-  // Fetch real models from OpenRouter
-  const models = await fetchVideoModels(user.id);
-  const model = models.find((m) => m.id === modelId) || models[0];
+  // Use the correct model
+  const model = modelId || "google/veo-3.1-lite";
 
-  if (!model) {
-    return NextResponse.json({ error: "No video models available on your OpenRouter account" }, { status: 400 });
-  }
-
-  const durationSec = duration || 10;
-  const estimatedCost = estimateCost(model, durationSec);
-
-  // Submit to OpenRouter video generation
+  // Submit to OpenRouter — correct endpoint: POST /api/v1/videos
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/video/generations", {
+    const res = await openrouterFetch(apiKey, "/videos", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-        "X-Title": "NUMU Director",
-      },
       body: JSON.stringify({
-        model: model.id,
-        messages: [{ role: "user", content: prompt }],
+        model,
+        prompt,
+        duration: duration || 10,
+        resolution: resolution || "720p",
+        aspect_ratio: aspectRatio || "16:9",
+        generate_audio: generateAudio || false,
       }),
     });
 
@@ -64,40 +65,62 @@ export async function POST(request: Request) {
     await db.insert(generations).values({
       id: genId,
       projectId,
-      model: model.id,
-      provider: model.provider,
+      model,
+      provider: "openrouter",
       intent: "TEXT_TO_VIDEO",
       compiledPrompt: prompt,
-      requestPayload: { model: model.id, prompt } as any,
+      requestPayload: { model, prompt, duration, resolution, aspectRatio } as any,
       openrouterJobId: data.id || null,
       pollingUrl: data.polling_url || null,
-      status: "submitted",
-      estimatedCost,
-      maxApprovedCost: estimatedCost,
+      status: data.status || "submitted",
+      estimatedCost: 0,
+      maxApprovedCost: 0,
       createdAt: new Date(),
     });
 
     return NextResponse.json({
       generationId: genId,
       jobId: data.id,
-      status: "submitted",
-      estimatedCost,
-      model: model.name,
-      duration: durationSec,
+      status: data.status || "submitted",
+      pollingUrl: data.polling_url,
+      model,
+      duration: duration || 10,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Generation failed" }, { status: 500 });
   }
 }
 
+// Poll job status
 export async function GET(request: Request) {
   const user = await getSessionUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const projectId = searchParams.get("projectId");
-  if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const jobId = searchParams.get("jobId");
+  const pollingUrl = searchParams.get("pollingUrl");
 
-  const gens = await db.select().from(generations).where(eq(generations.projectId, projectId));
-  return NextResponse.json({ generations: gens });
+  if (!jobId || !pollingUrl) return NextResponse.json({ error: "jobId and pollingUrl required" }, { status: 400 });
+
+  const apiKey = await getOpenRouterKey(user.id);
+  if (!apiKey) return NextResponse.json({ error: "OpenRouter key not connected" }, { status: 400 });
+
+  try {
+    const url = new URL(pollingUrl, "https://openrouter.ai");
+    const res = await openrouterFetch(apiKey, url.pathname + url.search);
+
+    if (!res.ok) {
+      const err = await res.text();
+      return NextResponse.json({ error: `Poll error: ${res.status} - ${err}` }, { status: 500 });
+    }
+
+    const data = await res.json();
+    return NextResponse.json({
+      status: data.status,
+      videoUrl: data.unsigned_urls?.[0] || null,
+      error: data.error || null,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }

@@ -27,7 +27,9 @@ export function ChatWorkspace({ projectId, projectTitle, initialAttach }: ChatWo
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendTimer, setSendTimer] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchMessages();
@@ -94,6 +96,8 @@ export function ChatWorkspace({ projectId, projectTitle, initialAttach }: ChatWo
     };
     setMessages((prev) => [...prev, userMsg]);
     setSending(true);
+    setSendTimer(0);
+    timerRef.current = setInterval(() => setSendTimer((t) => t + 1), 1000);
 
     // Save user message
     await fetch(`/api/projects/${projectId}/messages`, {
@@ -141,6 +145,7 @@ export function ChatWorkspace({ projectId, projectTitle, initialAttach }: ChatWo
       setMessages((prev) => [...prev, errorMsg]);
     }
 
+    if (timerRef.current) clearInterval(timerRef.current);
     setSending(false);
   };
 
@@ -181,10 +186,13 @@ export function ChatWorkspace({ projectId, projectTitle, initialAttach }: ChatWo
                 <span className="text-black text-xs font-medium">N</span>
               </div>
               <div className="bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="h-2 w-2 bg-neutral-600 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                  <span className="text-[10px] text-neutral-500 tabular-nums">{sendTimer}s</span>
                 </div>
               </div>
             </div>

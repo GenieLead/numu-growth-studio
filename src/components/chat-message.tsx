@@ -2,6 +2,17 @@
 
 import { Bot, User } from "lucide-react";
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    .replace(/`(.*?)`/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "• ");
+}
+
 interface ReferenceAttachment {
   assetId: string;
   url: string;
@@ -27,7 +38,8 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
   }
 
   const isUser = role === "user";
-  const text = typeof content === "string" ? content : (content as any)?.text || "";
+  const rawText = typeof content === "string" ? content : (content as any)?.text || "";
+  const text = isUser ? rawText : stripMarkdown(rawText);
   const attachments: ReferenceAttachment[] = typeof content === "object" && (content as any)?.attachments
     ? (content as any).attachments
     : [];

@@ -94,6 +94,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
     setMessages((prev) => [...prev, userMsg]);
     setSending(true);
 
+    // Save user message
     await fetch(`/api/projects/${projectId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -101,51 +102,46 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
       body: JSON.stringify({ role: "user", content }),
     });
 
-    // Director response
-    setTimeout(async () => {
-      const response = generateDirectorResponse(text, attachments);
-      const assistantMsg: Message = {
-        id: `temp-${Date.now()}`,
-        role: "assistant",
-        content: response,
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      await fetch(`/api/projects/${projectId}/messages`, {
+    // Call Director AI
+    try {
+      const res = await fetch(`/api/projects/${projectId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ role: "assistant", content: response }),
+        body: JSON.stringify({ projectId, content }),
       });
 
-      setSending(false);
-    }, 800);
+      const data = await res.json();
+
+      if (data.error) {
+        const errorMsg: Message = {
+          id: `temp-${Date.now()}`,
+          role: "assistant",
+          content: `Something went wrong: ${data.error}`,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      } else {
+        const assistantMsg: Message = {
+          id: data.messageId || `temp-${Date.now()}`,
+          role: "assistant",
+          content: data.text,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      }
+    } catch (error) {
+      const errorMsg: Message = {
+        id: `temp-${Date.now()}`,
+        role: "assistant",
+        content: "Network error. Check your connection and try again.",
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    }
+
+    setSending(false);
   };
-
-  function generateDirectorResponse(userMessage: string, attachments?: { name: string; mimeType: string }[]): string {
-    const lower = userMessage.toLowerCase();
-    const hasVideo = attachments?.some((a) => a.mimeType.startsWith("video/"));
-    const hasImage = attachments?.some((a) => a.mimeType.startsWith("image/"));
-
-    if (hasVideo) {
-      return "Got the reference video. I'll analyze the shots, motion, camera movement, and editing rhythm.\n\nA few questions:\n• What should change — actor, product, location, or all of them?\n• What should stay the same?\n• How long should the final video be?";
-    }
-
-    if (hasImage) {
-      return "Nice reference image. I'll study the composition, lighting, color palette, and subject placement.\n\nTell me:\n• Do you want to recreate this style for your own product/subject?\n• Or use this as a starting point for something new?";
-    }
-
-    if (lower.includes("video") || lower.includes("ad") || lower.includes("commercial")) {
-      return "Great idea. Let me understand a few things:\n\n• What's the product or brand?\n• Do you have a reference video or image I should work from?\n• How long should the final video be?";
-    }
-
-    if (lower.includes("image") || lower.includes("photo") || lower.includes("picture")) {
-      return "Got it. Tell me more:\n\n• What should the image show?\n• Any specific style or mood?\n• Do you have reference images?";
-    }
-
-    return "Interesting. Can you tell me more about what you're envisioning? For example:\n\n• What type of content — video, image, or both?\n• What's it for — ad, social media, brand content?\n• Any references or specific style in mind?";
-  }
 
   if (loading) {
     return (

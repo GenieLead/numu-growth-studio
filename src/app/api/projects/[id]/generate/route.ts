@@ -106,8 +106,8 @@ export async function GET(request: Request) {
   if (!apiKey) return NextResponse.json({ error: "OpenRouter key not connected" }, { status: 400 });
 
   try {
-    const url = new URL(pollingUrl, "https://openrouter.ai");
-    const res = await openrouterFetch(apiKey, url.pathname + url.search);
+    // Use GET /api/v1/videos/{job_id} for polling
+    const res = await openrouterFetch(apiKey, `/videos/${jobId}`);
 
     if (!res.ok) {
       const err = await res.text();

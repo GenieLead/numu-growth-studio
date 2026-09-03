@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { neonAdapter } from "@auth/neon-adapter";
+import neonAdapter from "@auth/neon-adapter";
 import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);

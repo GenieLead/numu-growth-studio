@@ -80,30 +80,32 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
     }
   };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, attachments?: { assetId: string; url: string; name: string; mimeType: string }[]) => {
     if (sending) return;
 
-    // Add user message immediately
+    const content = attachments && attachments.length > 0
+      ? { text, attachments }
+      : text;
+
     const userMsg: Message = {
       id: `temp-${Date.now()}`,
       role: "user",
-      content: text,
+      content: typeof content === "string" ? content : content.text,
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
     setSending(true);
 
-    // Persist user message
     await fetch(`/api/projects/${projectId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ role: "user", content: text }),
+      body: JSON.stringify({ role: "user", content }),
     });
 
-    // Generate Director response (placeholder for now)
+    // Director response
     setTimeout(async () => {
-      const response = generateDirectorResponse(text);
+      const response = generateDirectorResponse(text, attachments);
       const assistantMsg: Message = {
         id: `temp-${Date.now()}`,
         role: "assistant",
@@ -123,9 +125,18 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
     }, 800);
   };
 
-  // Temporary Director response — will be replaced with AI in Phase 4+
-  function generateDirectorResponse(userMessage: string): string {
+  function generateDirectorResponse(userMessage: string, attachments?: { name: string; mimeType: string }[]): string {
     const lower = userMessage.toLowerCase();
+    const hasVideo = attachments?.some((a) => a.mimeType.startsWith("video/"));
+    const hasImage = attachments?.some((a) => a.mimeType.startsWith("image/"));
+
+    if (hasVideo) {
+      return "Got the reference video. I'll analyze the shots, motion, camera movement, and editing rhythm.\n\nA few questions:\n• What should change — actor, product, location, or all of them?\n• What should stay the same?\n• How long should the final video be?";
+    }
+
+    if (hasImage) {
+      return "Nice reference image. I'll study the composition, lighting, color palette, and subject placement.\n\nTell me:\n• Do you want to recreate this style for your own product/subject?\n• Or use this as a starting point for something new?";
+    }
 
     if (lower.includes("video") || lower.includes("ad") || lower.includes("commercial")) {
       return "Great idea. Let me understand a few things:\n\n• What's the product or brand?\n• Do you have a reference video or image I should work from?\n• How long should the final video be?";
@@ -133,10 +144,6 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
 
     if (lower.includes("image") || lower.includes("photo") || lower.includes("picture")) {
       return "Got it. Tell me more:\n\n• What should the image show?\n• Any specific style or mood?\n• Do you have reference images?";
-    }
-
-    if (lower.includes("reference") || lower.includes("upload") || lower.includes("video of")) {
-      return "I can work with that. Upload the reference and I'll analyze the shots, motion, and editing style.";
     }
 
     return "Interesting. Can you tell me more about what you're envisioning? For example:\n\n• What type of content — video, image, or both?\n• What's it for — ad, social media, brand content?\n• Any references or specific style in mind?";
@@ -191,7 +198,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
       </div>
 
       {/* Composer */}
-      <ChatComposer onSend={handleSend} disabled={sending} />
+      <ChatComposer onSend={handleSend} disabled={sending} projectId={projectId} />
     </div>
   );
 }

@@ -19,7 +19,6 @@ export async function POST(request: Request) {
 
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
-  // Enforce size limit: 50MB
   if (file.size > 50 * 1024 * 1024) {
     return NextResponse.json({ error: "File too large (max 50MB)" }, { status: 400 });
   }
@@ -28,9 +27,12 @@ export async function POST(request: Request) {
   const path = `${user.id}/${projectId || "general"}/${crypto.randomUUID()}.${ext}`;
 
   const blob = await put(path, file, {
-    access: "public",
+    access: "private",
     contentType: file.type,
   });
+
+  // Create a proxy URL that the browser can use
+  const proxyUrl = `/api/assets/proxy?url=${encodeURIComponent(blob.url)}`;
 
   const assetId = crypto.randomUUID();
   const kind = file.type.startsWith("video/")
@@ -48,20 +50,20 @@ export async function POST(request: Request) {
     kind,
     source: "uploaded",
     name: file.name,
-    blobUrl: blob.url,
+    blobUrl: proxyUrl,
     blobPathname: blob.pathname,
     mimeType: file.type,
     width: null,
     height: null,
     durationSec: null,
-    metadata: { size: file.size },
+    metadata: { size: file.size, originalUrl: blob.url },
     approved: false,
     createdAt: new Date(),
   });
 
   return NextResponse.json({
     assetId,
-    url: blob.url,
+    url: proxyUrl,
     pathname: blob.pathname,
     kind,
     name: file.name,

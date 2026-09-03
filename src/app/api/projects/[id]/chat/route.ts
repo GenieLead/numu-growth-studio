@@ -88,6 +88,15 @@ export async function POST(request: Request) {
   // Call Director AI
   try {
     const response = await callDirector(user.id, openRouterMessages);
+    const responseText = response.text.toLowerCase();
+
+    // Check if Director is proposing generation and user confirmed
+    const userText = typeof content === "string" ? content : content?.text || "";
+    const userLastMessage = userText.toLowerCase();
+    const isUserConfirming = ["generate", "yes", "do it", "go ahead", "create", "make it", "confirm"].some(
+      (word) => userLastMessage.includes(word)
+    );
+    const directorProposing = responseText.includes("generate?") || responseText.includes("estimated credits");
 
     // Save assistant message
     const assistantMsgId = crypto.randomUUID();
@@ -99,10 +108,22 @@ export async function POST(request: Request) {
       createdAt: new Date(),
     });
 
+    // If user confirmed generation, create a system event
+    let systemEvent = null;
+    if (isUserConfirming && directorProposing) {
+      systemEvent = {
+        id: `sys-${Date.now()}`,
+        role: "system_event",
+        content: "Generation requested. The Director will submit your request to the AI video model.",
+        createdAt: new Date().toISOString(),
+      };
+    }
+
     return Response.json({
       text: response.text,
       model: response.model,
       messageId: assistantMsgId,
+      systemEvent,
     });
   } catch (error: any) {
     return Response.json({

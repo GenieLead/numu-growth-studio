@@ -119,6 +119,7 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
           method: "POST",
           credentials: "include",
           body: formData,
+          signal: AbortSignal.timeout(120000), // 2 min timeout for large videos
         });
 
         if (res.ok) {
@@ -143,7 +144,7 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
             tempVideo.onloadedmetadata = () => {
               URL.revokeObjectURL(tempVideo.src);
               if (tempVideo.duration > MAX_VIDEO_DURATION) {
-                const idx = attachments.length; // will be the new index
+                const idx = attachments.length;
                 setTrimmerVideo({ url: data.url, name: data.name, index: idx });
               }
             };

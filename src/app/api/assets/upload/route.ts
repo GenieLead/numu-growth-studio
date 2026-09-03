@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { put } from "@vercel/blob";
 import { db } from "@/db";
 import { assets } from "@/db/schema";
 
@@ -13,35 +12,22 @@ export async function POST(request: Request) {
   const user = await getSessionUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const formData = await request.formData();
-  const file = formData.get("file") as File | null;
-  const projectId = formData.get("projectId") as string | null;
+  const body = await request.json();
+  const { pathname, url, name, mimeType, size, projectId } = body;
 
-  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
-
-  if (file.size > 50 * 1024 * 1024) {
-    return NextResponse.json({ error: "File too large (max 50MB)" }, { status: 400 });
+  if (!url || !name) {
+    return NextResponse.json({ error: "url and name required" }, { status: 400 });
   }
 
-  const ext = file.name.split(".").pop() || "bin";
-  const path = `${user.id}/${projectId || "general"}/${crypto.randomUUID()}.${ext}`;
-
-  const blob = await put(path, file, {
-    access: "private",
-    contentType: file.type,
-  });
-
-  // Create a proxy URL that the browser can use
-  const proxyUrl = `/api/assets/proxy?url=${encodeURIComponent(blob.url)}`;
-
-  const assetId = crypto.randomUUID();
-  const kind = file.type.startsWith("video/")
+  const kind = mimeType?.startsWith("video/")
     ? "video"
-    : file.type.startsWith("image/")
+    : mimeType?.startsWith("image/")
       ? "image"
-      : file.type.startsWith("audio/")
+      : mimeType?.startsWith("audio/")
         ? "audio"
         : "reference";
+
+  const assetId = crypto.randomUUID();
 
   await db.insert(assets).values({
     id: assetId,
@@ -49,25 +35,25 @@ export async function POST(request: Request) {
     projectId: projectId || null,
     kind,
     source: "uploaded",
-    name: file.name,
-    blobUrl: proxyUrl,
-    blobPathname: blob.pathname,
-    mimeType: file.type,
+    name,
+    blobUrl: url,
+    blobPathname: pathname,
+    mimeType,
     width: null,
     height: null,
     durationSec: null,
-    metadata: { size: file.size, originalUrl: blob.url },
+    metadata: { size },
     approved: false,
     createdAt: new Date(),
   });
 
   return NextResponse.json({
     assetId,
-    url: proxyUrl,
-    pathname: blob.pathname,
+    url,
+    pathname,
     kind,
-    name: file.name,
-    mimeType: file.type,
-    size: file.size,
+    name,
+    mimeType,
+    size,
   });
 }

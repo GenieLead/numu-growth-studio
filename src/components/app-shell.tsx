@@ -16,7 +16,6 @@ import {
 import {
   Plus,
   FolderOpen,
-  Image,
   Settings,
   LogOut,
   ChevronLeft,
@@ -51,7 +50,6 @@ export function AppShell({ children }: AppShellProps) {
   const navItems = [
     { label: "New Project", icon: Plus, href: "/projects/new", accent: true },
     { label: "Library", icon: FolderOpen, href: "/library" },
-    { label: "Assets", icon: Image, href: "/assets" },
     { label: "Settings", icon: Settings, href: "/settings" },
   ];
 

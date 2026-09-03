@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages, projects } from "@/db/schema";
+import { messages } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { callDirector, analyzeImage, type ChatMessage } from "@/lib/openrouter";
+import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -30,40 +30,58 @@ export async function POST(request: Request) {
     createdAt: new Date(),
   });
 
-  // Fetch conversation history
+  // Fetch full conversation history
   const history = await db
     .select()
     .from(messages)
     .where(eq(messages.projectId, projectId))
     .orderBy(asc(messages.createdAt));
 
-  // Build OpenRouter messages (last 20 for context window)
+  // Build OpenRouter messages — include images in every message that has them
   const recentHistory = history.slice(-20);
-  const openRouterMessages: ChatMessage[] = recentHistory.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: formatContentForAI(m.content),
-  }));
+  const openRouterMessages: ChatMessage[] = recentHistory.map((m) => {
+    const role = m.role as "user" | "assistant";
+    const msgContent = m.content;
 
-  // If user sent images, analyze them first
-  const textContent = typeof content === "string" ? content : content?.text || "";
-  const attachments = typeof content === "object" && content?.attachments ? content.attachments : [];
+    // If content has attachments with images, send them as multimodal
+    if (typeof msgContent === "object" && msgContent !== null) {
+      const contentObj = msgContent as any;
+      const text = contentObj.text || "";
+      const attachments = contentObj.attachments || [];
 
-  if (attachments.length > 0 && textContent.toLowerCase().includes("describe")) {
-    // Analyze the first image
-    const imageAtt = attachments.find((a: any) => a.mimeType?.startsWith("image/"));
-    if (imageAtt?.url) {
-      try {
-        const analysis = await analyzeImage(user.id, imageAtt.url);
-        // Prepend analysis context to the conversation
-        openRouterMessages.push({
-          role: "user",
-          content: `[Image Analysis of "${imageAtt.customName || imageAtt.name}"]:\n${analysis}\n\nUser's message: ${textContent}`,
-        });
-      } catch (e) {
-        console.error("Image analysis failed:", e);
+      if (attachments.length > 0) {
+        const parts: ContentPart[] = [];
+
+        // Add all images first
+        for (const att of attachments) {
+          if (att.mimeType?.startsWith("image/") && att.url) {
+            parts.push({
+              type: "image_url",
+              image_url: { url: att.url },
+            });
+          }
+        }
+
+        // Add text with reference labels
+        const refLabels = attachments
+          .filter((a: any) => a.customName)
+          .map((a: any) => `@${a.customName} (${a.kind || "reference"})`)
+          .join(", ");
+
+        const fullText = refLabels
+          ? `[References: ${refLabels}]\n${text}`
+          : text;
+
+        parts.push({ type: "text", text: fullText });
+
+        return { role, content: parts };
       }
+
+      return { role, content: text };
     }
-  }
+
+    return { role, content: String(msgContent) };
+  });
 
   // Call Director AI
   try {
@@ -89,21 +107,4 @@ export async function POST(request: Request) {
       error: error.message || "Failed to get response",
     }, { status: 500 });
   }
-}
-
-function formatContentForAI(content: any): string {
-  if (typeof content === "string") return content;
-  if (content?.text) {
-    const parts = [content.text];
-    if (content.attachments?.length) {
-      const refs = content.attachments.map((a: any) => {
-        const label = a.customName || a.name;
-        const kind = a.kind || "reference";
-        return `[Attached: ${label} (${kind}, ${a.mimeType})]`;
-      });
-      parts.push(refs.join("\n"));
-    }
-    return parts.join("\n");
-  }
-  return JSON.stringify(content);
 }

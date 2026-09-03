@@ -36,8 +36,8 @@ export async function POST(request: Request) {
   const apiKey = await getOpenRouterKey(user.id);
   if (!apiKey) return NextResponse.json({ error: "OpenRouter key not connected" }, { status: 400 });
 
-  // Use the correct model
-  const model = modelId || "google/veo-3.1-lite";
+  // Use Seedance 2.5 as primary (supports 4-30s)
+  const model = modelId || "bytedance/seedance-2.5";
 
   // Submit to OpenRouter — correct endpoint: POST /api/v1/videos
   try {

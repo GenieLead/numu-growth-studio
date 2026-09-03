@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, Paperclip } from "lucide-react";
 import { ReferenceCard, type UploadedFile, type ReferenceKind } from "@/components/reference-card";
-import { VoiceRecorder } from "@/components/voice-recorder";
+import { VoiceInput } from "@/components/voice-input";
 
 interface ChatComposerProps {
   onSend: (message: string, attachments?: UploadedFile[]) => void;
@@ -16,8 +16,42 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [showAtMenu, setShowAtMenu] = useState(false);
+  const [atFilter, setAtFilter] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const namedRefs = attachments.filter((a) => a.customName);
+
+  // @-mention detection
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursorPos = el.selectionStart;
+    const textBeforeCursor = message.slice(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+    if (atMatch && namedRefs.length > 0) {
+      setShowAtMenu(true);
+      setAtFilter(atMatch[1].toLowerCase());
+    } else {
+      setShowAtMenu(false);
+    }
+  }, [message, namedRefs.length]);
+
+  const insertAtMention = (name: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursorPos = el.selectionStart;
+    const textBeforeCursor = message.slice(0, cursorPos);
+    const textAfterCursor = message.slice(cursorPos);
+    const newBefore = textBeforeCursor.replace(/@\w*$/, `@${name} `);
+    setMessage(newBefore + textAfterCursor);
+    setShowAtMenu(false);
+    setTimeout(() => {
+      el.selectionStart = el.selectionEnd = newBefore.length;
+      el.focus();
+    }, 0);
+  };
 
   const handleSubmit = () => {
     if ((!message.trim() && attachments.length === 0) || disabled) return;
@@ -28,7 +62,7 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !showAtMenu) {
       e.preventDefault();
       handleSubmit();
     }
@@ -42,10 +76,16 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
     }
   };
 
+  const handleVoiceTranscript = (text: string) => {
+    setMessage((prev) => {
+      const trimmed = prev.trimEnd();
+      return trimmed ? `${trimmed} ${text}` : text;
+    });
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
     setUploading(true);
 
     for (const file of Array.from(files)) {
@@ -62,7 +102,6 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
 
         if (res.ok) {
           const data = await res.json();
-          const kind = data.kind === "video" ? "reference" : data.kind === "image" ? "reference" : "reference";
           setAttachments((prev) => [
             ...prev,
             {
@@ -71,7 +110,7 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
               name: data.name,
               mimeType: data.mimeType,
               size: data.size,
-              kind: kind as ReferenceKind,
+              kind: "reference" as ReferenceKind,
               customName: "",
             },
           ]);
@@ -85,15 +124,15 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const files = e.dataTransfer.files;
-    if (!files.length) return;
-
-    // Simulate file input
-    if (fileInputRef.current) {
-      fileInputRef.current.files = files;
-      handleFileSelect({ target: { files } } as any);
+    if (files.length && fileInputRef.current) {
+      // Create a synthetic event
+      const dt = new DataTransfer();
+      for (const f of Array.from(files)) dt.items.add(f);
+      fileInputRef.current.files = dt.files;
+      handleFileSelect({ target: { files: dt.files } } as any);
     }
   };
 
@@ -107,6 +146,7 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
       }
     }
     if (files.length > 0) {
+      e.preventDefault();
       setUploading(true);
       for (const file of files) {
         try {
@@ -143,40 +183,6 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
     }
   };
 
-  const handleVoiceRecording = async (blob: Blob) => {
-    const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
-    const formData = new FormData();
-    formData.append("file", file);
-    if (projectId) formData.append("projectId", projectId);
-
-    setUploading(true);
-    try {
-      const res = await fetch("/api/assets/upload", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAttachments((prev) => [
-          ...prev,
-          {
-            assetId: data.assetId,
-            url: data.url,
-            name: "Voice message",
-            mimeType: data.mimeType,
-            size: data.size,
-            kind: "reference" as ReferenceKind,
-            customName: "Voice message",
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Upload failed:", error);
-    }
-    setUploading(false);
-  };
-
   const updateAttachment = (index: number, updates: Partial<UploadedFile>) => {
     setAttachments((prev) => prev.map((a, i) => (i === index ? { ...a, ...updates } : a)));
   };
@@ -185,11 +191,9 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Build @-mention hint text
-  const namedRefs = attachments.filter((a) => a.customName);
-  const atHint = namedRefs.length > 0
-    ? `Referenced: ${namedRefs.map((a) => `@${a.customName}`).join(", ")}`
-    : "";
+  const filteredRefs = namedRefs.filter((r) =>
+    r.customName.toLowerCase().includes(atFilter)
+  );
 
   return (
     <div
@@ -197,9 +201,9 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      {/* Attachments preview */}
+      {/* Attachments */}
       {attachments.length > 0 && (
-        <div className="max-w-3xl mx-auto mb-3 flex gap-3 overflow-x-auto pb-2">
+        <div className="max-w-3xl mx-auto mb-3 flex gap-2 overflow-x-auto pb-2">
           {attachments.map((att, i) => (
             <ReferenceCard
               key={att.assetId}
@@ -211,13 +215,25 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
         </div>
       )}
 
-      {/* @-mention hint */}
-      {atHint && (
+      {/* @-mention menu */}
+      {showAtMenu && filteredRefs.length > 0 && (
         <div className="max-w-3xl mx-auto mb-2">
-          <p className="text-xs text-neutral-500">{atHint}</p>
+          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-1 shadow-lg">
+            {filteredRefs.map((ref) => (
+              <button
+                key={ref.assetId}
+                onClick={() => insertAtMention(ref.customName)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 rounded text-left hover:bg-neutral-700 transition-colors"
+              >
+                <span className="text-accent-lime text-xs font-medium">@{ref.customName}</span>
+                <span className="text-neutral-500 text-[10px]">{ref.kind}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
+      {/* Input row */}
       <div className="flex items-end gap-2 max-w-3xl mx-auto">
         <input
           ref={fileInputRef}
@@ -237,7 +253,7 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
           <Paperclip className="h-5 w-5" />
         </Button>
 
-        <VoiceRecorder onRecordingComplete={handleVoiceRecording} disabled={disabled} />
+        <VoiceInput onTranscript={handleVoiceTranscript} disabled={disabled} />
 
         <div className="flex-1 relative">
           <textarea
@@ -247,11 +263,7 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
             onKeyDown={handleKeyDown}
             onInput={handleInput}
             onPaste={handlePaste}
-            placeholder={
-              uploading
-                ? "Uploading..."
-                : "Describe what you want to create..."
-            }
+            placeholder={uploading ? "Uploading..." : "Describe what you want to create..."}
             rows={1}
             disabled={disabled || uploading}
             className="w-full resize-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600 disabled:opacity-50"

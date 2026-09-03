@@ -18,7 +18,7 @@ interface ChatMessageProps {
 
 export function ChatMessage({ role, content }: ChatMessageProps) {
   if (role === "system_event") {
-    const text = typeof content === "string" ? content : content?.text || "";
+    const text = typeof content === "string" ? content : (content as any)?.text || "";
     return (
       <div className="flex justify-center py-2">
         <span className="text-xs text-neutral-500 bg-neutral-900 px-3 py-1 rounded-full">{text}</span>
@@ -27,8 +27,10 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
   }
 
   const isUser = role === "user";
-  const text = typeof content === "string" ? content : content?.text || "";
-  const attachments = typeof content === "object" && content?.attachments ? content.attachments : [];
+  const text = typeof content === "string" ? content : (content as any)?.text || "";
+  const attachments: ReferenceAttachment[] = typeof content === "object" && (content as any)?.attachments
+    ? (content as any).attachments
+    : [];
 
   return (
     <div className={`flex gap-3 py-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -44,18 +46,18 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
         )}
       </div>
       <div className={`max-w-[80%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}>
-        {/* Reference thumbnails */}
+        {/* Attachments */}
         {attachments.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             {attachments.map((att) => {
               const isImage = att.mimeType?.startsWith("image/");
               const isVideo = att.mimeType?.startsWith("video/");
               return (
-                <div key={att.assetId} className="relative rounded-lg overflow-hidden border border-neutral-700 bg-neutral-900">
-                  {isImage && <img src={att.url} alt={att.customName || att.name} className="w-32 h-24 object-cover" />}
-                  {isVideo && <video src={att.url} className="w-32 h-24 object-cover" muted playsInline />}
+                <div key={att.assetId} className="relative rounded-lg overflow-hidden border border-neutral-700 bg-neutral-800">
+                  {isImage && <img src={att.url} alt={att.customName || att.name} className="w-40 h-28 object-cover" />}
+                  {isVideo && <video src={att.url} className="w-40 h-28 object-cover" muted playsInline />}
                   {!isImage && !isVideo && (
-                    <div className="w-32 h-24 bg-neutral-800 flex items-center justify-center text-neutral-500 text-xs">
+                    <div className="w-40 h-28 bg-neutral-900 flex items-center justify-center text-neutral-500 text-xs">
                       {att.name}
                     </div>
                   )}

@@ -67,9 +67,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
         } else {
           setMessages(msgs.map((m: any) => ({
             ...m,
-            content: typeof m.content === "object" && m.content?.text
-              ? m.content.text
-              : m.content,
+            content: m.content,
           })));
         }
       }
@@ -80,7 +78,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
     }
   };
 
-  const handleSend = async (text: string, attachments?: { assetId: string; url: string; name: string; mimeType: string }[]) => {
+  const handleSend = async (text: string, attachments?: { assetId: string; url: string; name: string; mimeType: string; kind?: string; customName?: string }[]) => {
     if (sending) return;
 
     const content = attachments && attachments.length > 0
@@ -90,7 +88,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
     const userMsg: Message = {
       id: `temp-${Date.now()}`,
       role: "user",
-      content: typeof content === "string" ? content : content.text,
+      content: content as any,
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);

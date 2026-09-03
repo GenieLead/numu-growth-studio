@@ -128,10 +128,13 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
               name: data.name,
               mimeType: data.mimeType,
               size: data.size,
-              kind: "reference" as ReferenceKind,
+              kind: data.kind || "reference",
               customName: "",
             },
           ]);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          console.error("Upload failed:", err.error || res.statusText);
         }
       } catch (error) {
         console.error("Upload failed:", error);

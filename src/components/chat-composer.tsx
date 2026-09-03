@@ -10,9 +10,10 @@ interface ChatComposerProps {
   onSend: (message: string, attachments?: UploadedFile[]) => void;
   disabled?: boolean;
   projectId?: string;
+  initialAttach?: { assetId: string; url: string; name: string; mimeType: string; kind: string; multi?: { assetId: string; url: string; name: string; mimeType: string; kind: string }[] } | null;
 }
 
-export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps) {
+export function ChatComposer({ onSend, disabled, projectId, initialAttach }: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -20,6 +21,23 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
   const [atFilter, setAtFilter] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Pre-attach asset(s) from URL (e.g., "Use in Project" from library)
+  useEffect(() => {
+    if (initialAttach && attachments.length === 0) {
+      const items = initialAttach.multi || [initialAttach];
+      setAttachments(items.map((a) => ({
+        assetId: a.assetId,
+        url: a.url,
+        name: a.name,
+        mimeType: a.mimeType,
+        size: 0,
+        kind: a.kind as ReferenceKind,
+        customName: "",
+      })));
+      window.history.replaceState({}, "", `/projects/${projectId}`);
+    }
+  }, [initialAttach]);
 
   const namedRefs = attachments.filter((a) => a.customName);
 

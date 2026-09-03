@@ -17,11 +17,12 @@ interface Message {
 interface ChatWorkspaceProps {
   projectId: string;
   projectTitle: string;
+  initialAttach?: { assetId: string; url: string; name: string; mimeType: string; kind: string; multi?: { assetId: string; url: string; name: string; mimeType: string; kind: string }[] } | null;
 }
 
 const DIRECTOR_OPENING = "What are we making?";
 
-export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
+export function ChatWorkspace({ projectId, projectTitle, initialAttach }: ChatWorkspaceProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +118,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
         const errorMsg: Message = {
           id: `temp-${Date.now()}`,
           role: "assistant",
-          content: `Something went wrong: ${data.error}`,
+          content: data.error.includes("Invalid URL") ? "Image couldn't be analyzed. Try describing it in text instead." : `Something went wrong. Try again.`,
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, errorMsg]);
@@ -192,7 +193,7 @@ export function ChatWorkspace({ projectId, projectTitle }: ChatWorkspaceProps) {
       </div>
 
       {/* Composer */}
-      <ChatComposer onSend={handleSend} disabled={sending} projectId={projectId} />
+      <ChatComposer onSend={handleSend} disabled={sending} projectId={projectId} initialAttach={initialAttach} />
     </div>
   );
 }

@@ -52,12 +52,14 @@ export async function POST(request: Request) {
       if (attachments.length > 0) {
         const parts: ContentPart[] = [];
 
-        // Add all images first
+        // Add all images first — convert relative proxy URLs to absolute
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         for (const att of attachments) {
           if (att.mimeType?.startsWith("image/") && att.url) {
+            const fullUrl = att.url.startsWith("http") ? att.url : `${baseUrl}${att.url}`;
             parts.push({
               type: "image_url",
-              image_url: { url: att.url },
+              image_url: { url: fullUrl },
             });
           }
         }

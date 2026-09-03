@@ -1,18 +1,14 @@
-import { auth } from "@/lib/auth";
 import { get } from "@vercel/blob";
 
-async function getSessionUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  return session?.user || null;
-}
-
 export async function GET(request: Request) {
-  const user = await getSessionUser(request);
-  if (!user) return new Response("Unauthorized", { status: 401 });
-
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
   if (!url) return new Response("Missing url", { status: 400 });
+
+  // Only allow proxying from our blob store
+  if (!url.includes("private.blob.vercel-storage.com")) {
+    return new Response("Invalid url", { status: 400 });
+  }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

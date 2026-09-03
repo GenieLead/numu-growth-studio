@@ -52,7 +52,7 @@ export async function POST(request: Request) {
       if (attachments.length > 0) {
         const parts: ContentPart[] = [];
 
-        // Add all images first — convert relative proxy URLs to absolute
+        // Add all images — convert relative proxy URLs to absolute
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         for (const att of attachments) {
           if (att.mimeType?.startsWith("image/") && att.url) {
@@ -62,6 +62,16 @@ export async function POST(request: Request) {
               image_url: { url: fullUrl },
             });
           }
+        }
+
+        // For videos: add as text context (Gemini can't process video files)
+        const videos = attachments.filter((a: any) => a.mimeType?.startsWith("video/"));
+        if (videos.length > 0) {
+          const videoLabels = videos.map((v: any) => {
+            const label = v.customName || v.name || "video reference";
+            return `[Video uploaded: "${label}" — user should describe motion/pacing]`;
+          }).join("\n");
+          parts.push({ type: "text", text: videoLabels });
         }
 
         // Add text with reference labels

@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreHorizontal, Film, Image, Clock, DollarSign } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Plus, MoreHorizontal, Film, Image, Clock, DollarSign, Trash2, Copy } from "lucide-react";
 
 interface Project {
   id: string;
@@ -69,6 +76,18 @@ export default function LibraryPage() {
     }
   };
 
+  const deleteProject = async (id: string) => {
+    try {
+      await fetch(`/api/projects?id=${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+    } catch (error) {
+      console.error("Failed to delete project:", error);
+    }
+  };
+
   if (!authed) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -80,19 +99,14 @@ export default function LibraryPage() {
   return (
     <AppShell>
       <div className="flex flex-col h-full">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h1 className="text-lg font-semibold">Library</h1>
-          <Button
-            onClick={createProject}
-            className="bg-accent-lime text-black hover:bg-accent-lime/90 font-medium"
-          >
+          <Button onClick={createProject} className="bg-accent-lime text-black hover:bg-accent-lime/90 font-medium">
             <Plus className="h-4 w-4 mr-2" />
             New Project
           </Button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-auto p-6">
           <Tabs defaultValue="projects" className="w-full">
             <TabsList className="bg-neutral-900 border border-neutral-800">
@@ -108,19 +122,11 @@ export default function LibraryPage() {
 
             <TabsContent value="projects" className="mt-6">
               {loading ? (
-                <div className="text-center text-neutral-400 text-sm py-12">
-                  Loading projects...
-                </div>
+                <div className="text-center text-neutral-400 text-sm py-12">Loading projects...</div>
               ) : projects.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="text-neutral-400 text-sm mb-4">
-                    No projects yet. Create your first one.
-                  </div>
-                  <Button
-                    onClick={createProject}
-                    variant="outline"
-                    className="border-neutral-700"
-                  >
+                  <div className="text-neutral-400 text-sm mb-4">No projects yet. Create your first one.</div>
+                  <Button onClick={createProject} variant="outline" className="border-neutral-700">
                     <Plus className="h-4 w-4 mr-2" />
                     New Project
                   </Button>
@@ -130,22 +136,33 @@ export default function LibraryPage() {
                   {projects.map((project) => (
                     <Card
                       key={project.id}
-                      className="bg-neutral-900 border-neutral-800 hover:border-neutral-700 transition-colors cursor-pointer"
+                      className="bg-neutral-900 border-neutral-800 hover:border-neutral-700 transition-colors cursor-pointer group"
                       onClick={() => router.push(`/projects/${project.id}`)}
                     >
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
-                          <CardTitle className="text-base font-medium truncate">
-                            {project.title}
-                          </CardTitle>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
+                          <CardTitle className="text-base font-medium truncate">{project.title}</CardTitle>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded hover:bg-neutral-800" onClick={(e) => e.stopPropagation()}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-neutral-900 border-neutral-800">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/projects/${project.id}`); }}>
+                                Open
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-neutral-800" />
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); deleteProject(project.id); }}
+                                className="text-red-400 focus:text-red-300"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                         <CardDescription className="flex items-center gap-2 text-xs">
-                          <Badge variant="secondary" className="bg-neutral-800 text-neutral-300">
-                            {project.status}
-                          </Badge>
+                          <Badge variant="secondary" className="bg-neutral-800 text-neutral-300">{project.status}</Badge>
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
@@ -168,9 +185,7 @@ export default function LibraryPage() {
 
             <TabsContent value="assets" className="mt-6">
               <div className="text-center py-12">
-                <div className="text-neutral-400 text-sm">
-                  Assets you upload or generate will appear here.
-                </div>
+                <div className="text-neutral-400 text-sm">Assets you upload or generate will appear here.</div>
               </div>
             </TabsContent>
           </Tabs>

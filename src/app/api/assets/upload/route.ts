@@ -19,11 +19,16 @@ export async function POST(request: Request) {
 
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
+  // Enforce size limit: 50MB
+  if (file.size > 50 * 1024 * 1024) {
+    return NextResponse.json({ error: "File too large (max 50MB)" }, { status: 400 });
+  }
+
   const ext = file.name.split(".").pop() || "bin";
   const path = `${user.id}/${projectId || "general"}/${crypto.randomUUID()}.${ext}`;
 
   const blob = await put(path, file, {
-    access: "private",
+    access: "public",
     contentType: file.type,
   });
 

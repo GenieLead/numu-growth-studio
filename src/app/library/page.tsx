@@ -15,7 +15,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, MoreHorizontal, Film, Image, Clock, DollarSign, Trash2, Copy, Pencil, Check } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, MoreHorizontal, Film, Image, Clock, DollarSign, Trash2, Copy, Pencil, Check, X } from "lucide-react";
 
 interface Project {
   id: string;
@@ -46,6 +54,15 @@ export default function LibraryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
+  // Delete project dialog
+  const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
+  const [deleteProjectTitle, setDeleteProjectTitle] = useState("");
+  const [deleteAssetsToo, setDeleteAssetsToo] = useState(true);
+
+  // Asset selection
+  const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+
   useEffect(() => {
     fetch("/api/auth/get-session", { credentials: "include" })
       .then((r) => r.json())
@@ -66,14 +83,8 @@ export default function LibraryPage() {
         fetch("/api/projects", { credentials: "include" }),
         fetch("/api/assets", { credentials: "include" }),
       ]);
-      if (projRes.ok) {
-        const data = await projRes.json();
-        setProjects(data.projects || []);
-      }
-      if (assetRes.ok) {
-        const data = await assetRes.json();
-        setAssets(data.assets || []);
-      }
+      if (projRes.ok) setProjects((await projRes.json()).projects || []);
+      if (assetRes.ok) setAssets((await assetRes.json()).assets || []);
     } catch (error) {
       console.error("Failed to fetch:", error);
     } finally {
@@ -82,72 +93,93 @@ export default function LibraryPage() {
   };
 
   const createProject = async () => {
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ title: "Untitled" }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        router.push(`/projects/${data.project.id}`);
-      }
-    } catch (error) {
-      console.error("Failed to create project:", error);
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ title: "Untitled" }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      router.push(`/projects/${data.project.id}`);
     }
   };
 
   const duplicateProject = async (id: string) => {
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ duplicateFromId: id }),
-      });
-      if (res.ok) {
-        fetchAll();
-      }
-    } catch (error) {
-      console.error("Failed to duplicate:", error);
-    }
+    await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ duplicateFromId: id }),
+    });
+    fetchAll();
   };
 
   const renameProject = async (id: string) => {
     if (!editTitle.trim()) return;
-    try {
-      await fetch("/api/projects", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ id, title: editTitle }),
-      });
-      setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, title: editTitle } : p)));
-      setEditingId(null);
-    } catch (error) {
-      console.error("Failed to rename:", error);
+    await fetch("/api/projects", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id, title: editTitle }),
+    });
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, title: editTitle } : p)));
+    setEditingId(null);
+  };
+
+  const confirmDeleteProject = (id: string, title: string) => {
+    setDeleteProjectId(id);
+    setDeleteProjectTitle(title);
+    setDeleteAssetsToo(true);
+  };
+
+  const executeDeleteProject = async () => {
+    if (!deleteProjectId) return;
+
+    // Delete associated assets if requested
+    if (deleteAssetsToo) {
+      const projectAssets = assets.filter((a) => a.projectId === deleteProjectId);
+      for (const asset of projectAssets) {
+        await fetch(`/api/assets?id=${asset.id}`, { method: "DELETE", credentials: "include" });
+      }
+      setAssets((prev) => prev.filter((a) => a.projectId !== deleteProjectId));
+    }
+
+    // Delete project
+    await fetch(`/api/projects?id=${deleteProjectId}`, { method: "DELETE", credentials: "include" });
+    setProjects((prev) => prev.filter((p) => p.id !== deleteProjectId));
+    setDeleteProjectId(null);
+  };
+
+  // Asset selection
+  const toggleAssetSelect = (id: string) => {
+    setSelectedAssets((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllAssets = () => {
+    if (selectedAssets.size === assets.length) {
+      setSelectedAssets(new Set());
+    } else {
+      setSelectedAssets(new Set(assets.map((a) => a.id)));
     }
   };
 
-  const deleteProject = async (id: string) => {
-    try {
-      await fetch(`/api/projects?id=${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      setProjects((prev) => prev.filter((p) => p.id !== id));
-    } catch (error) {
-      console.error("Failed to delete:", error);
+  const deleteSelectedAssets = async () => {
+    for (const id of selectedAssets) {
+      await fetch(`/api/assets?id=${id}`, { method: "DELETE", credentials: "include" });
     }
+    setAssets((prev) => prev.filter((a) => !selectedAssets.has(a.id)));
+    setSelectedAssets(new Set());
+    setSelectMode(false);
   };
 
   if (!authed) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-neutral-400 text-sm">Loading...</div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-screen"><div className="text-neutral-400 text-sm">Loading...</div></div>;
   }
 
   return (
@@ -156,8 +188,7 @@ export default function LibraryPage() {
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800">
           <h1 className="text-lg font-semibold">Library</h1>
           <Button onClick={createProject} className="bg-accent-lime text-black hover:bg-accent-lime/90 font-medium">
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
+            <Plus className="h-4 w-4 mr-2" /> New Project
           </Button>
         </div>
 
@@ -165,12 +196,10 @@ export default function LibraryPage() {
           <Tabs defaultValue="projects" className="w-full">
             <TabsList className="bg-neutral-900 border border-neutral-800">
               <TabsTrigger value="projects" className="data-[state=active]:bg-neutral-800">
-                <Film className="h-4 w-4 mr-2" />
-                Projects ({projects.length})
+                <Film className="h-4 w-4 mr-2" /> Projects ({projects.length})
               </TabsTrigger>
               <TabsTrigger value="assets" className="data-[state=active]:bg-neutral-800">
-                <Image className="h-4 w-4 mr-2" />
-                Assets ({assets.length})
+                <Image className="h-4 w-4 mr-2" /> Assets ({assets.length})
               </TabsTrigger>
             </TabsList>
 
@@ -195,7 +224,6 @@ export default function LibraryPage() {
                     >
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
-                          {/* Title — editable */}
                           {editingId === project.id ? (
                             <div className="flex items-center gap-1 flex-1">
                               <Input
@@ -213,8 +241,6 @@ export default function LibraryPage() {
                           ) : (
                             <CardTitle className="text-base font-medium truncate">{project.title}</CardTitle>
                           )}
-
-                          {/* Menu */}
                           <DropdownMenu>
                             <DropdownMenuTrigger className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded hover:bg-neutral-800 transition-opacity" onClick={(e) => e.stopPropagation()}>
                               <MoreHorizontal className="h-4 w-4" />
@@ -230,7 +256,7 @@ export default function LibraryPage() {
                                 <Copy className="mr-2 h-4 w-4" /> Duplicate
                               </DropdownMenuItem>
                               <DropdownMenuSeparator className="bg-neutral-800" />
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); deleteProject(project.id); }} className="text-red-400 focus:text-red-300">
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); confirmDeleteProject(project.id, project.title); }} className="text-red-400 focus:text-red-300">
                                 <Trash2 className="mr-2 h-4 w-4" /> Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -242,14 +268,8 @@ export default function LibraryPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="flex items-center gap-4 text-xs text-neutral-400">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="h-3 w-3" />
-                            {project.creditsSpent.toFixed(2)}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {new Date(project.updatedAt).toLocaleDateString()}
-                          </span>
+                          <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{project.creditsSpent.toFixed(2)}</span>
+                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(project.updatedAt).toLocaleDateString()}</span>
                         </div>
                       </CardContent>
                     </Card>
@@ -262,41 +282,109 @@ export default function LibraryPage() {
             <TabsContent value="assets" className="mt-6">
               {assets.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="text-neutral-400 text-sm">
-                    Assets you upload in projects appear here automatically.
-                  </div>
+                  <div className="text-neutral-400 text-sm">Assets you upload in projects appear here automatically.</div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {assets.map((asset) => (
-                    <div key={asset.id} className="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden group">
-                      <div className="relative">
-                        {asset.mimeType.startsWith("image/") ? (
-                          <img src={asset.blobUrl} alt={asset.name} className="w-full h-32 object-cover" />
-                        ) : asset.mimeType.startsWith("video/") ? (
-                          <video src={asset.blobUrl} className="w-full h-32 object-cover" muted playsInline />
-                        ) : (
-                          <div className="w-full h-32 bg-neutral-800 flex items-center justify-center text-neutral-500 text-xs">
-                            {asset.kind}
+                <>
+                  {/* Toolbar */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      {selectMode ? (
+                        <>
+                          <Button variant="outline" size="sm" className="border-neutral-700" onClick={selectAllAssets}>
+                            {selectedAssets.size === assets.length ? "Deselect All" : "Select All"}
+                          </Button>
+                          <span className="text-xs text-neutral-500">{selectedAssets.size} selected</span>
+                          {selectedAssets.size > 0 && (
+                            <Button variant="outline" size="sm" className="border-red-700 text-red-400 hover:bg-red-500/10" onClick={deleteSelectedAssets}>
+                              <Trash2 className="h-3 w-3 mr-1" /> Delete ({selectedAssets.size})
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" onClick={() => { setSelectMode(false); setSelectedAssets(new Set()); }}>
+                            <X className="h-3 w-3 mr-1" /> Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="outline" size="sm" className="border-neutral-700" onClick={() => setSelectMode(true)}>
+                          Select
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {assets.map((asset) => (
+                      <div
+                        key={asset.id}
+                        className={`bg-neutral-900 border rounded-lg overflow-hidden cursor-pointer transition-colors ${
+                          selectedAssets.has(asset.id) ? "border-accent-lime" : "border-neutral-800 hover:border-neutral-700"
+                        }`}
+                        onClick={() => selectMode ? toggleAssetSelect(asset.id) : null}
+                      >
+                        <div className="relative">
+                          {asset.mimeType.startsWith("image/") ? (
+                            <img src={asset.blobUrl} alt={asset.name} className="w-full h-32 object-cover" />
+                          ) : asset.mimeType.startsWith("video/") ? (
+                            <video src={asset.blobUrl} className="w-full h-32 object-cover" muted playsInline />
+                          ) : (
+                            <div className="w-full h-32 bg-neutral-800 flex items-center justify-center text-neutral-500 text-xs">{asset.kind}</div>
+                          )}
+                          {selectMode && (
+                            <div className={`absolute top-2 left-2 h-5 w-5 rounded border-2 flex items-center justify-center ${
+                              selectedAssets.has(asset.id) ? "bg-accent-lime border-accent-lime" : "border-neutral-500 bg-black/40"
+                            }`}>
+                              {selectedAssets.has(asset.id) && <Check className="h-3 w-3 text-black" />}
+                            </div>
+                          )}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                            <Badge variant="secondary" className="bg-neutral-800/80 text-neutral-300 text-[10px]">{asset.kind}</Badge>
                           </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
-                          <Badge variant="secondary" className="bg-neutral-800/80 text-neutral-300 text-[10px]">
-                            {asset.kind}
-                          </Badge>
+                        </div>
+                        <div className="p-2">
+                          <p className="text-xs text-neutral-400 truncate">{asset.name}</p>
                         </div>
                       </div>
-                      <div className="p-2">
-                        <p className="text-xs text-neutral-400 truncate">{asset.name}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
             </TabsContent>
           </Tabs>
         </div>
       </div>
+
+      {/* Delete Project Dialog */}
+      <Dialog open={!!deleteProjectId} onOpenChange={(open) => { if (!open) setDeleteProjectId(null); }}>
+        <DialogContent className="bg-neutral-900 border-neutral-800">
+          <DialogHeader>
+            <DialogTitle>Delete "{deleteProjectTitle}"?</DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 py-2">
+            <input
+              type="checkbox"
+              id="deleteAssets"
+              checked={deleteAssetsToo}
+              onChange={(e) => setDeleteAssetsToo(e.target.checked)}
+              className="accent-accent-lime"
+            />
+            <label htmlFor="deleteAssets" className="text-sm text-neutral-300">
+              Also delete {assets.filter((a) => a.projectId === deleteProjectId).length} assets from this project
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteProjectId(null)} className="border-neutral-700">
+              Cancel
+            </Button>
+            <Button onClick={executeDeleteProject} className="bg-red-600 hover:bg-red-500 text-white">
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

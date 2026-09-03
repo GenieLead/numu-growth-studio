@@ -1,13 +1,11 @@
 import { betterAuth } from "better-auth";
-import { neon } from "@neondatabase/serverless";
-
-const sql = neon(process.env.DATABASE_URL!);
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "@/db";
 
 export const auth = betterAuth({
-  database: {
-    type: "postgresql",
-    url: process.env.DATABASE_URL!,
-  },
+  database: drizzleAdapter(db, {
+    provider: "pg",
+  }),
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,

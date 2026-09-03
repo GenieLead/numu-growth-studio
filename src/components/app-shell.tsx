@@ -124,20 +124,15 @@ export function AppShell({ children }: AppShellProps) {
         {/* User menu */}
         <div className="p-2 border-t border-neutral-800">
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-start gap-3 text-neutral-400 hover:text-white"
-              >
-                <div className="h-7 w-7 rounded-full bg-neutral-800 flex items-center justify-center">
-                  <User className="h-4 w-4" />
-                </div>
-                {!collapsed && (
-                  <span className="truncate text-sm">
-                    {session?.user?.name || session?.user?.email || "Account"}
-                  </span>
-                )}
-              </Button>
+            <DropdownMenuTrigger className="flex items-center gap-3 w-full px-2 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800/50 transition-colors">
+              <div className="h-7 w-7 rounded-full bg-neutral-800 flex items-center justify-center">
+                <User className="h-4 w-4" />
+              </div>
+              {!collapsed && (
+                <span className="truncate text-sm">
+                  {session?.user?.name || session?.user?.email || "Account"}
+                </span>
+              )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48 bg-neutral-900 border-neutral-800">
               <DropdownMenuItem className="text-neutral-300">

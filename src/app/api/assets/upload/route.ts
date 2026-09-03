@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { put } from "@vercel/blob";
+import { put, getDownloadUrl } from "@vercel/blob";
 import { db } from "@/db";
 import { assets } from "@/db/schema";
 
@@ -27,6 +27,9 @@ export async function POST(request: Request) {
     contentType: file.type,
   });
 
+  // Get a fresh signed URL for the client
+  const signedUrl = await getDownloadUrl(blob.pathname);
+
   const assetId = crypto.randomUUID();
   const kind = file.type.startsWith("video/")
     ? "video"
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
     kind,
     source: "uploaded",
     name: file.name,
-    blobUrl: blob.url,
+    blobUrl: signedUrl,
     blobPathname: blob.pathname,
     mimeType: file.type,
     width: null,
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     assetId,
-    url: blob.url,
+    url: signedUrl,
     pathname: blob.pathname,
     kind,
     name: file.name,

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Send, Paperclip } from "lucide-react";
 import { ReferenceCard, type UploadedFile, type ReferenceKind } from "@/components/reference-card";
 import { VoiceInput } from "@/components/voice-input";
+import { VideoTrimmer } from "@/components/video-trimmer";
 
 interface ChatComposerProps {
   onSend: (message: string, attachments?: UploadedFile[]) => void;
@@ -19,6 +20,8 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
   const [uploading, setUploading] = useState(false);
   const [showAtMenu, setShowAtMenu] = useState(false);
   const [atFilter, setAtFilter] = useState("");
+  const [trimmerVideo, setTrimmerVideo] = useState<{ url: string; name: string; index: number } | null>(null);
+  const MAX_VIDEO_DURATION = 30;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -120,18 +123,31 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
 
         if (res.ok) {
           const data = await res.json();
-          setAttachments((prev) => [
-            ...prev,
-            {
-              assetId: data.assetId,
-              url: data.url,
-              name: data.name,
-              mimeType: data.mimeType,
-              size: data.size,
-              kind: data.kind || "reference",
-              customName: "",
-            },
-          ]);
+          const newAtt: UploadedFile = {
+            assetId: data.assetId,
+            url: data.url,
+            name: data.name,
+            mimeType: data.mimeType,
+            size: data.size,
+            kind: data.kind || "reference",
+            customName: "",
+          };
+
+          setAttachments((prev) => [...prev, newAtt]);
+
+          // Check if video > 30s — show trim dialog
+          if (file.type.startsWith("video/")) {
+            const tempVideo = document.createElement("video");
+            tempVideo.preload = "metadata";
+            tempVideo.src = URL.createObjectURL(file);
+            tempVideo.onloadedmetadata = () => {
+              URL.revokeObjectURL(tempVideo.src);
+              if (tempVideo.duration > MAX_VIDEO_DURATION) {
+                const idx = attachments.length; // will be the new index
+                setTrimmerVideo({ url: data.url, name: data.name, index: idx });
+              }
+            };
+          }
         } else {
           const err = await res.json().catch(() => ({}));
           console.error("Upload failed:", err.error || res.statusText);
@@ -300,6 +316,26 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
           <Send className="h-5 w-5" />
         </Button>
       </div>
+
+      {/* Video Trimmer Dialog */}
+      {trimmerVideo && (
+        <VideoTrimmer
+          open={!!trimmerVideo}
+          onOpenChange={(open) => { if (!open) setTrimmerVideo(null); }}
+          videoUrl={trimmerVideo.url}
+          videoName={trimmerVideo.name}
+          maxDuration={MAX_VIDEO_DURATION}
+          onSave={(start, end) => {
+            // Store trim points with the attachment
+            setAttachments((prev) => prev.map((a, i) =>
+              i === trimmerVideo.index
+                ? { ...a, customName: a.customName || `trimmed ${Math.round(start)}s-${Math.round(end)}s` }
+                : a
+            ));
+            setTrimmerVideo(null);
+          }}
+        />
+      )}
     </div>
   );
 }

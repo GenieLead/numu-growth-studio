@@ -1,6 +1,5 @@
 export const runtime = "nodejs";
 export const maxDuration = 60;
-export const maxSize = 100; // 100MB
 
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";

@@ -1,74 +1,26 @@
 import { auth } from "@/lib/auth";
 
 export async function GET(request: Request) {
-  try {
-    const session = await auth.api.getSession({
-      headers: request.headers,
-    });
-
-    if (!session) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    return Response.json({ user: session.user, session: session.session });
-  } catch {
-    return Response.json({ error: "Internal error" }, { status: 500 });
-  }
+  // @ts-expect-error - Better Auth handler types don't match Next.js but works at runtime
+  return auth.handler(request);
 }
 
 export async function POST(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const path = url.pathname.replace("/api/auth", "");
+  // @ts-expect-error - Better Auth handler types don't match Next.js but works at runtime
+  return auth.handler(request);
+}
 
-    // Handle sign in
-    if (path === "/sign-in/email") {
-      const body = await request.json();
-      const result = await auth.api.signInEmail({
-        body: {
-          email: body.email,
-          password: body.password,
-        },
-        headers: request.headers,
-      });
-      return Response.json(result);
-    }
+export async function PUT(request: Request) {
+  // @ts-expect-error - Better Auth handler types don't match Next.js but works at runtime
+  return auth.handler(request);
+}
 
-    // Handle sign up
-    if (path === "/sign-up/email") {
-      const body = await request.json();
-      const result = await auth.api.signUpEmail({
-        body: {
-          email: body.email,
-          password: body.password,
-          name: body.name,
-        },
-        headers: request.headers,
-      });
-      return Response.json(result);
-    }
+export async function PATCH(request: Request) {
+  // @ts-expect-error - Better Auth handler types don't match Next.js but works at runtime
+  return auth.handler(request);
+}
 
-    // Handle sign out
-    if (path === "/sign-out") {
-      await auth.api.signOut({
-        headers: request.headers,
-      });
-      return Response.json({ success: true });
-    }
-
-    // Handle get session
-    if (path === "/get-session") {
-      const session = await auth.api.getSession({
-        headers: request.headers,
-      });
-      return Response.json({ data: session });
-    }
-
-    return Response.json({ error: "Not found" }, { status: 404 });
-  } catch (error: any) {
-    return Response.json(
-      { error: error.message || "Internal error" },
-      { status: 500 }
-    );
-  }
+export async function DELETE(request: Request) {
+  // @ts-expect-error - Better Auth handler types don't match Next.js but works at runtime
+  return auth.handler(request);
 }

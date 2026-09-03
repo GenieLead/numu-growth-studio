@@ -1,8 +1,6 @@
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
 export const authClient = {
   async signIn(email: string, password: string) {
-    const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
+    const res = await fetch("/api/auth/sign-in/email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -13,7 +11,7 @@ export const authClient = {
   },
 
   async signUp(name: string, email: string, password: string) {
-    const res = await fetch(`${BASE_URL}/api/auth/sign-up/email`, {
+    const res = await fetch("/api/auth/sign-up/email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password }),
@@ -24,14 +22,14 @@ export const authClient = {
   },
 
   async signOut() {
-    await fetch(`${BASE_URL}/api/auth/sign-out`, {
+    await fetch("/api/auth/sign-out", {
       method: "POST",
       credentials: "include",
     });
   },
 
   async getSession() {
-    const res = await fetch(`${BASE_URL}/api/auth/get-session`, {
+    const res = await fetch("/api/auth/get-session", {
       credentials: "include",
     });
     const data = await res.json();

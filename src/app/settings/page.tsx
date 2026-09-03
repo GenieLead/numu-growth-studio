@@ -8,12 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { authClient } from "@/lib/auth-client";
 import { Key, DollarSign, Check, X, ExternalLink } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [session, setSession] = useState<any>(null);
+  const [userName, setUserName] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [connected, setConnected] = useState(false);
   const [last4, setLast4] = useState("");
@@ -22,14 +21,17 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    authClient.getSession().then((s) => {
-      if (!s?.user) {
-        router.push("/login");
-      } else {
-        setSession(s);
-        fetchSettings();
-      }
-    });
+    fetch("/api/auth/get-session", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data?.user) {
+          router.push("/login");
+        } else {
+          setUserName(data.user.name || data.user.email || "");
+          fetchSettings();
+        }
+      })
+      .catch(() => router.push("/login"));
   }, [router]);
 
   const fetchSettings = async () => {
@@ -49,7 +51,6 @@ export default function SettingsPage() {
   const connectKey = async () => {
     if (!openrouterKey) return;
     setTesting(true);
-
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -57,7 +58,6 @@ export default function SettingsPage() {
         credentials: "include",
         body: JSON.stringify({ openrouterKey }),
       });
-
       if (res.ok) {
         const data = await res.json();
         setConnected(data.connected);
@@ -102,28 +102,22 @@ export default function SettingsPage() {
     }
   };
 
-  if (!session) {
+  if (!userName) {
     return (
-      <AppShell>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-neutral-400 text-sm">Loading...</div>
-        </div>
-      </AppShell>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-neutral-400 text-sm">Loading...</div>
+      </div>
     );
   }
 
   return (
     <AppShell>
       <div className="flex flex-col h-full">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-neutral-800">
           <h1 className="text-lg font-semibold">Settings</h1>
         </div>
-
-        {/* Content */}
         <div className="flex-1 overflow-auto p-6 max-w-2xl">
           <div className="space-y-6">
-            {/* OpenRouter Key */}
             <Card className="bg-neutral-900 border-neutral-800">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -139,26 +133,14 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">
-                        Connected ••••{last4}
-                      </span>
+                      <span className="text-sm">Connected ••••{last4}</span>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-neutral-700"
-                        onClick={() => window.open("https://openrouter.ai/keys", "_blank")}
-                      >
+                      <Button variant="outline" size="sm" className="border-neutral-700" onClick={() => window.open("https://openrouter.ai/keys", "_blank")}>
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Manage
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-red-700 text-red-400 hover:bg-red-500/10"
-                        onClick={disconnectKey}
-                      >
+                      <Button variant="outline" size="sm" className="border-red-700 text-red-400 hover:bg-red-500/10" onClick={disconnectKey}>
                         <X className="h-3 w-3 mr-1" />
                         Disconnect
                       </Button>
@@ -166,28 +148,12 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <Input
-                      type="password"
-                      placeholder="sk-or-v1-..."
-                      value={openrouterKey}
-                      onChange={(e) => setOpenrouterKey(e.target.value)}
-                      className="bg-neutral-800 border-neutral-700"
-                    />
+                    <Input type="password" placeholder="sk-or-v1-..." value={openrouterKey} onChange={(e) => setOpenrouterKey(e.target.value)} className="bg-neutral-800 border-neutral-700" />
                     <div className="flex gap-2">
-                      <Button
-                        onClick={connectKey}
-                        disabled={!openrouterKey || testing}
-                        className="bg-accent-lime text-black hover:bg-accent-lime/90 font-medium"
-                        size="sm"
-                      >
+                      <Button onClick={connectKey} disabled={!openrouterKey || testing} className="bg-accent-lime text-black hover:bg-accent-lime/90 font-medium" size="sm">
                         {testing ? "Testing..." : "Connect"}
                       </Button>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="text-neutral-400"
-                        onClick={() => window.open("https://openrouter.ai/keys", "_blank")}
-                      >
+                      <Button variant="link" size="sm" className="text-neutral-400" onClick={() => window.open("https://openrouter.ai/keys", "_blank")}>
                         Get a key →
                       </Button>
                     </div>
@@ -196,41 +162,21 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Budget */}
             <Card className="bg-neutral-900 border-neutral-800">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
                   Budget Limit
                 </CardTitle>
-                <CardDescription>
-                  Set a maximum spend per project. 1 credit = $1 USD.
-                </CardDescription>
+                <CardDescription>Set a maximum spend per project. 1 credit = $1 USD.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-end gap-3">
                   <div className="flex-1 space-y-2">
-                    <Label htmlFor="budget" className="text-neutral-300 text-sm">
-                      Maximum credits per project
-                    </Label>
-                    <Input
-                      id="budget"
-                      type="number"
-                      placeholder="e.g. 10"
-                      value={budget}
-                      onChange={(e) => setBudget(e.target.value)}
-                      min="0"
-                      step="0.5"
-                      className="bg-neutral-800 border-neutral-700"
-                    />
+                    <Label htmlFor="budget" className="text-neutral-300 text-sm">Maximum credits per project</Label>
+                    <Input id="budget" type="number" placeholder="e.g. 10" value={budget} onChange={(e) => setBudget(e.target.value)} min="0" step="0.5" className="bg-neutral-800 border-neutral-700" />
                   </div>
-                  <Button
-                    onClick={saveBudget}
-                    disabled={saving}
-                    variant="outline"
-                    size="default"
-                    className="border-neutral-700"
-                  >
+                  <Button onClick={saveBudget} disabled={saving} variant="outline" className="border-neutral-700">
                     {saving ? "Saving..." : "Save"}
                   </Button>
                 </div>
@@ -239,15 +185,12 @@ export default function SettingsPage() {
 
             <Separator className="bg-neutral-800" />
 
-            {/* Account */}
             <Card className="bg-neutral-900 border-neutral-800">
               <CardHeader>
                 <CardTitle className="text-base">Account</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-sm text-neutral-400">
-                  {session?.user?.email}
-                </div>
+                <div className="text-sm text-neutral-400">{userName}</div>
               </CardContent>
             </Card>
           </div>

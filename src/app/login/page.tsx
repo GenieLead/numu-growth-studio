@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,26 +15,38 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    authClient.getSession().then((session) => {
-      if (session?.user) router.push("/library");
-    });
-  }, [router]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const result = await authClient.signIn(email, password);
+    try {
+      const res = await fetch("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
+      });
 
-    if (result.error) {
-      setError(result.error.message || "Invalid email or password");
+      const data = await res.json();
+
+      if (data.error) {
+        setError(data.error.message || data.error || "Invalid email or password");
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        router.push("/library");
+        return;
+      }
+
+      setError("Something went wrong");
       setLoading(false);
-      return;
+    } catch {
+      setError("Network error. Try again.");
+      setLoading(false);
     }
-
-    router.push("/library");
   };
 
   return (

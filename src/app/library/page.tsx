@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { authClient } from "@/lib/auth-client";
 import { Plus, MoreHorizontal, Film, Image, Clock, DollarSign } from "lucide-react";
 
 interface Project {
@@ -23,17 +22,20 @@ export default function LibraryPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    authClient.getSession().then((session) => {
-      if (!session?.user) {
-        router.push("/login");
-      } else {
-        setAuthChecked(true);
-        fetchProjects();
-      }
-    });
+    fetch("/api/auth/get-session", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.user) {
+          setAuthed(true);
+          fetchProjects();
+        } else {
+          router.push("/login");
+        }
+      })
+      .catch(() => router.push("/login"));
   }, [router]);
 
   const fetchProjects = async () => {
@@ -67,13 +69,11 @@ export default function LibraryPage() {
     }
   };
 
-  if (!authChecked) {
+  if (!authed) {
     return (
-      <AppShell>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-neutral-400 text-sm">Loading...</div>
-        </div>
-      </AppShell>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-neutral-400 text-sm">Loading...</div>
+      </div>
     );
   }
 

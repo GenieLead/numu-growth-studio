@@ -13,7 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
 import {
   Plus,
   FolderOpen,
@@ -31,51 +30,36 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [session, setSession] = useState<any>(null);
+  const [userName, setUserName] = useState("");
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    authClient.getSession().then((s) => {
-      if (s?.user) setSession(s);
-    });
+    fetch("/api/auth/get-session", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.user) {
+          setUserName(data.user.name || data.user.email || "");
+        }
+      });
   }, []);
 
   const handleSignOut = async () => {
-    await authClient.signOut();
+    await fetch("/api/auth/sign-out", { method: "POST", credentials: "include" });
     router.push("/login");
   };
 
   const navItems = [
-    {
-      label: "New Project",
-      icon: Plus,
-      href: "/projects/new",
-      accent: true,
-    },
-    {
-      label: "Library",
-      icon: FolderOpen,
-      href: "/library",
-    },
-    {
-      label: "Assets",
-      icon: Image,
-      href: "/assets",
-    },
-    {
-      label: "Settings",
-      icon: Settings,
-      href: "/settings",
-    },
+    { label: "New Project", icon: Plus, href: "/projects/new", accent: true },
+    { label: "Library", icon: FolderOpen, href: "/library" },
+    { label: "Assets", icon: Image, href: "/assets" },
+    { label: "Settings", icon: Settings, href: "/settings" },
   ];
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
       <aside
         className={`${collapsed ? "w-16" : "w-56"} flex flex-col border-r border-neutral-800 bg-neutral-950 transition-all duration-200`}
       >
-        {/* Header */}
         <div className="flex items-center justify-between p-4">
           {!collapsed && (
             <Link href="/library" className="text-lg font-semibold tracking-tight">
@@ -96,7 +80,6 @@ export function AppShell({ children }: AppShellProps) {
 
         <Separator className="bg-neutral-800" />
 
-        {/* Navigation */}
         <ScrollArea className="flex-1 py-2">
           <nav className="space-y-1 px-2">
             {navItems.map((item) => {
@@ -121,7 +104,6 @@ export function AppShell({ children }: AppShellProps) {
           </nav>
         </ScrollArea>
 
-        {/* User menu */}
         <div className="p-2 border-t border-neutral-800">
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-3 w-full px-2 py-1.5 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800/50 transition-colors">
@@ -129,15 +111,13 @@ export function AppShell({ children }: AppShellProps) {
                 <User className="h-4 w-4" />
               </div>
               {!collapsed && (
-                <span className="truncate text-sm">
-                  {session?.user?.name || session?.user?.email || "Account"}
-                </span>
+                <span className="truncate text-sm">{userName || "Account"}</span>
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48 bg-neutral-900 border-neutral-800">
               <DropdownMenuItem className="text-neutral-300">
                 <User className="mr-2 h-4 w-4" />
-                {session?.user?.email}
+                {userName}
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-neutral-800" />
               <DropdownMenuItem onClick={handleSignOut} className="text-neutral-300">
@@ -149,7 +129,6 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
   );

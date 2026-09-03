@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { authClient } from "@/lib/auth-client";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -17,26 +16,38 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    authClient.getSession().then((session) => {
-      if (session?.user) router.push("/library");
-    });
-  }, [router]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const result = await authClient.signUp(name, email, password);
+    try {
+      const res = await fetch("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+        credentials: "include",
+      });
 
-    if (result.error) {
-      setError(result.error.message || "Failed to create account");
+      const data = await res.json();
+
+      if (data.error) {
+        setError(data.error.message || data.error || "Failed to create account");
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        router.push("/library");
+        return;
+      }
+
+      setError("Something went wrong");
       setLoading(false);
-      return;
+    } catch {
+      setError("Network error. Try again.");
+      setLoading(false);
     }
-
-    router.push("/library");
   };
 
   return (

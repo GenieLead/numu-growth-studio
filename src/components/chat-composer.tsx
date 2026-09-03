@@ -2,16 +2,9 @@
 
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, Paperclip, X } from "lucide-react";
-import { MediaPreviewCard } from "@/components/media-preview-card";
-
-interface UploadedFile {
-  assetId: string;
-  url: string;
-  name: string;
-  mimeType: string;
-  size: number;
-}
+import { Send, Paperclip } from "lucide-react";
+import { ReferenceCard, type UploadedFile, type ReferenceKind } from "@/components/reference-card";
+import { VoiceRecorder } from "@/components/voice-recorder";
 
 interface ChatComposerProps {
   onSend: (message: string, attachments?: UploadedFile[]) => void;
@@ -28,12 +21,10 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
 
   const handleSubmit = () => {
     if ((!message.trim() && attachments.length === 0) || disabled) return;
-    onSend(message.trim() || "Here's my reference", attachments.length > 0 ? attachments : undefined);
+    onSend(message.trim() || "Here are my references", attachments.length > 0 ? attachments : undefined);
     setMessage("");
     setAttachments([]);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -56,7 +47,6 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
     if (!files || files.length === 0) return;
 
     setUploading(true);
-    const newAttachments: UploadedFile[] = [];
 
     for (const file of Array.from(files)) {
       try {
@@ -72,47 +62,163 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
 
         if (res.ok) {
           const data = await res.json();
-          newAttachments.push({
-            assetId: data.assetId,
-            url: data.url,
-            name: data.name,
-            mimeType: data.mimeType,
-            size: data.size,
-          });
+          const kind = data.kind === "video" ? "reference" : data.kind === "image" ? "reference" : "reference";
+          setAttachments((prev) => [
+            ...prev,
+            {
+              assetId: data.assetId,
+              url: data.url,
+              name: data.name,
+              mimeType: data.mimeType,
+              size: data.size,
+              kind: kind as ReferenceKind,
+              customName: "",
+            },
+          ]);
         }
       } catch (error) {
         console.error("Upload failed:", error);
       }
     }
 
-    setAttachments((prev) => [...prev, ...newAttachments]);
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (!files.length) return;
+
+    // Simulate file input
+    if (fileInputRef.current) {
+      fileInputRef.current.files = files;
+      handleFileSelect({ target: { files } } as any);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const files: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      setUploading(true);
+      for (const file of files) {
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+          if (projectId) formData.append("projectId", projectId);
+
+          const res = await fetch("/api/assets/upload", {
+            method: "POST",
+            credentials: "include",
+            body: formData,
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            setAttachments((prev) => [
+              ...prev,
+              {
+                assetId: data.assetId,
+                url: data.url,
+                name: data.name,
+                mimeType: data.mimeType,
+                size: data.size,
+                kind: "reference" as ReferenceKind,
+                customName: "",
+              },
+            ]);
+          }
+        } catch (error) {
+          console.error("Upload failed:", error);
+        }
+      }
+      setUploading(false);
+    }
+  };
+
+  const handleVoiceRecording = async (blob: Blob) => {
+    const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
+    const formData = new FormData();
+    formData.append("file", file);
+    if (projectId) formData.append("projectId", projectId);
+
+    setUploading(true);
+    try {
+      const res = await fetch("/api/assets/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments((prev) => [
+          ...prev,
+          {
+            assetId: data.assetId,
+            url: data.url,
+            name: "Voice message",
+            mimeType: data.mimeType,
+            size: data.size,
+            kind: "reference" as ReferenceKind,
+            customName: "Voice message",
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error("Upload failed:", error);
+    }
+    setUploading(false);
+  };
+
+  const updateAttachment = (index: number, updates: Partial<UploadedFile>) => {
+    setAttachments((prev) => prev.map((a, i) => (i === index ? { ...a, ...updates } : a)));
   };
 
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Build @-mention hint text
+  const namedRefs = attachments.filter((a) => a.customName);
+  const atHint = namedRefs.length > 0
+    ? `Referenced: ${namedRefs.map((a) => `@${a.customName}`).join(", ")}`
+    : "";
+
   return (
-    <div className="border-t border-neutral-800 bg-neutral-950 p-4">
+    <div
+      className="border-t border-neutral-800 bg-neutral-950 p-4"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+    >
       {/* Attachments preview */}
       {attachments.length > 0 && (
         <div className="max-w-3xl mx-auto mb-3 flex gap-3 overflow-x-auto pb-2">
           {attachments.map((att, i) => (
-            <MediaPreviewCard
+            <ReferenceCard
               key={att.assetId}
-              name={att.name}
-              url={att.url}
-              mimeType={att.mimeType}
-              size={att.size}
+              file={att}
+              onUpdate={(updates) => updateAttachment(i, updates)}
               onRemove={() => removeAttachment(i)}
             />
           ))}
         </div>
       )}
 
-      <div className="flex items-end gap-3 max-w-3xl mx-auto">
+      {/* @-mention hint */}
+      {atHint && (
+        <div className="max-w-3xl mx-auto mb-2">
+          <p className="text-xs text-neutral-500">{atHint}</p>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2 max-w-3xl mx-auto">
         <input
           ref={fileInputRef}
           type="file"
@@ -130,6 +236,9 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
         >
           <Paperclip className="h-5 w-5" />
         </Button>
+
+        <VoiceRecorder onRecordingComplete={handleVoiceRecording} disabled={disabled} />
+
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
@@ -137,18 +246,18 @@ export function ChatComposer({ onSend, disabled, projectId }: ChatComposerProps)
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
+            onPaste={handlePaste}
             placeholder={
               uploading
                 ? "Uploading..."
-                : attachments.length > 0
-                  ? "Add a message about your reference..."
-                  : "Describe what you want to create..."
+                : "Describe what you want to create..."
             }
             rows={1}
             disabled={disabled || uploading}
-            className="w-full resize-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-3 pr-12 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600 disabled:opacity-50"
+            className="w-full resize-none bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600 disabled:opacity-50"
           />
         </div>
+
         <Button
           onClick={handleSubmit}
           disabled={(!message.trim() && attachments.length === 0) || disabled || uploading}

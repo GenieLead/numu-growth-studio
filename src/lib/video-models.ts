@@ -1,77 +1,89 @@
+import { getOpenRouterKey } from "./openrouter";
+
 export interface VideoModel {
   id: string;
   name: string;
   provider: string;
-  maxDuration: number;
-  minDuration: number;
-  resolutions: string[];
-  aspectRatios: string[];
-  supportsImages: boolean;
-  supportsAudio: boolean;
-  pricePerSecond: number;
+  maxDuration?: number;
+  minDuration?: number;
+  pricePerSecond?: number;
   currency: string;
+  capabilities: string[];
 }
 
-export const VIDEO_MODELS: VideoModel[] = [
-  {
-    id: "bytedance/seedance-1.0-pro",
-    name: "Seedance 1.0 Pro",
-    provider: "ByteDance",
-    maxDuration: 10,
-    minDuration: 2,
-    resolutions: ["720p", "1080p"],
-    aspectRatios: ["9:16", "16:9", "1:1"],
-    supportsImages: true,
-    supportsAudio: true,
-    pricePerSecond: 0.10,
-    currency: "USD",
-  },
-  {
-    id: "bytedance/seedance-1.0-lite",
-    name: "Seedance 1.0 Lite",
-    provider: "ByteDance",
-    maxDuration: 10,
-    minDuration: 2,
-    resolutions: ["720p"],
-    aspectRatios: ["9:16", "16:9", "1:1"],
-    supportsImages: true,
-    supportsAudio: false,
-    pricePerSecond: 0.05,
-    currency: "USD",
-  },
-];
+// Cache for models (refresh every hour)
+let modelsCache: VideoModel[] = [];
+let lastFetch = 0;
+const CACHE_TTL = 60 * 60 * 1000;
 
-export function getModelById(id: string): VideoModel | undefined {
-  return VIDEO_MODELS.find((m) => m.id === id);
+export async function fetchVideoModels(userId: string): Promise<VideoModel[]> {
+  const now = Date.now();
+  if (modelsCache.length > 0 && now - lastFetch < CACHE_TTL) {
+    return modelsCache;
+  }
+
+  const apiKey = await getOpenRouterKey(userId);
+  if (!apiKey) return [];
+
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const models = data.data || [];
+
+    // Filter for video models
+    modelsCache = models
+      .filter((m: any) => {
+        const id = m.id.toLowerCase();
+        return id.includes("video") || id.includes("seedance") || id.includes("kling") || id.includes("sora") || id.includes("runway") || id.includes("pika");
+      })
+      .map((m: any) => ({
+        id: m.id,
+        name: m.name || m.id,
+        provider: m.id.split("/")[0] || "unknown",
+        pricePerSecond: m.pricing?.prompt ? parseFloat(m.pricing.prompt) : undefined,
+        currency: "USD",
+        capabilities: [],
+      }));
+
+    lastFetch = now;
+    return modelsCache;
+  } catch {
+    return modelsCache;
+  }
+}
+
+export function getModelById(models: VideoModel[], id: string): VideoModel | undefined {
+  return models.find((m) => m.id === id);
 }
 
 export function estimateCost(model: VideoModel, durationSec: number): number {
+  if (!model.pricePerSecond) return 0;
   return Math.ceil(durationSec * model.pricePerSecond * 100) / 100;
 }
 
 export function findBestModel(
+  models: VideoModel[],
   duration: number,
-  needsImages: boolean,
-  needsAudio: boolean,
   budget?: number
 ): VideoModel | null {
-  const candidates = VIDEO_MODELS.filter(
-    (m) =>
-      duration >= m.minDuration &&
-      duration <= m.maxDuration &&
-      (!needsImages || m.supportsImages) &&
-      (!needsAudio || m.supportsAudio)
-  );
+  const candidates = models.filter((m) => {
+    if (m.maxDuration && duration > m.maxDuration) return false;
+    return true;
+  });
 
   if (candidates.length === 0) return null;
 
-  // Sort by price (cheapest first)
-  candidates.sort((a, b) => a.pricePerSecond - b.pricePerSecond);
+  // Sort by price if available
+  candidates.sort((a, b) => (a.pricePerSecond || 0) - (b.pricePerSecond || 0));
 
-  // If budget given, find cheapest that fits
   if (budget !== undefined) {
     for (const m of candidates) {
-      if (estimateCost(m, duration) <= budget) return m;
+      if (!m.pricePerSecond || estimateCost(m, duration) <= budget) return m;
     }
   }
 

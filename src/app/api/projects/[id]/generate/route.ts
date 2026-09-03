@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { generations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOpenRouterKey } from "@/lib/openrouter";
-import { VIDEO_MODELS, getModelById, estimateCost } from "@/lib/video-models";
+import { fetchVideoModels, estimateCost } from "@/lib/video-models";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -25,29 +25,18 @@ export async function POST(request: Request) {
   const apiKey = await getOpenRouterKey(user.id);
   if (!apiKey) return NextResponse.json({ error: "OpenRouter key not connected" }, { status: 400 });
 
-  const model = getModelById(modelId || "bytedance/seedance-1.0-pro");
-  if (!model) return NextResponse.json({ error: "Model not found" }, { status: 400 });
+  // Fetch real models from OpenRouter
+  const models = await fetchVideoModels(user.id);
+  const model = models.find((m) => m.id === modelId) || models[0];
+
+  if (!model) {
+    return NextResponse.json({ error: "No video models available on your OpenRouter account" }, { status: 400 });
+  }
 
   const durationSec = duration || 10;
   const estimatedCost = estimateCost(model, durationSec);
 
-  // Build the OpenRouter request
-  const requestBody: any = {
-    model: model.id,
-    prompt: prompt,
-  };
-
-  // Add reference image if provided
-  if (imageUrl) {
-    requestBody.image_url = imageUrl;
-  }
-
-  // Add reference video if provided
-  if (referenceUrl) {
-    requestBody.reference_url = referenceUrl;
-  }
-
-  // Submit to OpenRouter
+  // Submit to OpenRouter video generation
   try {
     const res = await fetch("https://openrouter.ai/api/v1/video/generations", {
       method: "POST",
@@ -59,12 +48,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model: model.id,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
@@ -84,7 +68,7 @@ export async function POST(request: Request) {
       provider: model.provider,
       intent: "TEXT_TO_VIDEO",
       compiledPrompt: prompt,
-      requestPayload: requestBody as any,
+      requestPayload: { model: model.id, prompt } as any,
       openrouterJobId: data.id || null,
       pollingUrl: data.polling_url || null,
       status: "submitted",
@@ -114,10 +98,6 @@ export async function GET(request: Request) {
   const projectId = searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
-  const gens = await db
-    .select()
-    .from(generations)
-    .where(eq(generations.projectId, projectId));
-
+  const gens = await db.select().from(generations).where(eq(generations.projectId, projectId));
   return NextResponse.json({ generations: gens });
 }

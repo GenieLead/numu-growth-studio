@@ -113,7 +113,24 @@ export async function POST(
 
     if (planMatch) {
       try {
-        generationPlan = JSON.parse(planMatch[1]);
+        const raw = JSON.parse(planMatch[1]);
+        // Normalize keys — Director may output camelCase or missing underscores
+        generationPlan = {
+          task_type: raw.task_type || raw.tasktype || "reference_to_video",
+          prompt: raw.prompt || "",
+          reference_urls: raw.reference_urls || raw.referenceurls || [],
+          asset_urls: {
+            character: raw.asset_urls?.character || raw.asseturls?.character || null,
+            product: raw.asset_urls?.product || raw.asseturls?.product || null,
+            location: raw.asset_urls?.location || raw.asseturls?.location || null,
+          },
+          settings: {
+            duration: raw.settings?.duration || 10,
+            resolution: raw.settings?.resolution || "720p",
+            aspect_ratio: raw.settings?.aspect_ratio || raw.settings?.aspectratio || "16:9",
+          },
+          estimated_credits: raw.estimated_credits || raw.estimatedcredits || 0,
+        };
         responseText = responseText
           .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/, "")
           .trim();

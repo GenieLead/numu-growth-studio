@@ -128,16 +128,29 @@ export async function routeGeneration(
   if (!orKey) throw new Error("OpenRouter key not connected. Add it in Settings.");
 
   if (request.taskType === "reference_to_video") {
+    // Filter to only image URLs — Seedance R2V doesn't accept video references
+    const imageRefs = (request.referenceImageUrls || []).filter(
+      (url) => !url.endsWith(".mp4") && !url.endsWith(".mov") && !url.endsWith(".webm") && !url.endsWith(".avi")
+    );
+
+    // Also include character/product/location images as references
+    const assetImages = [
+      request.characterImageUrl,
+      request.productImageUrl,
+      request.locationImageUrl,
+    ].filter(Boolean) as string[];
+
+    const allRefs = [...new Set([...imageRefs, ...assetImages])];
+
     const result = await submitVideoGeneration(orKey, {
       model: "bytedance/seedance-2.5",
       prompt: request.prompt,
       duration: request.duration || 10,
       resolution: request.resolution || "720p",
       aspectRatio: request.aspectRatio || "16:9",
-      inputReferences: request.referenceImageUrls?.map((url) => ({
-        type: "image_url",
-        image_url: { url },
-      })),
+      inputReferences: allRefs.length > 0
+        ? allRefs.map((url) => ({ type: "image_url", image_url: { url } }))
+        : undefined,
     });
     return {
       provider: "openrouter",

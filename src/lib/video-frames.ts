@@ -36,13 +36,19 @@ export async function extractVideoFrames(
 
       video.onseeked = () => {
         try {
+          // Resize to max 512px wide for smaller payload
+          const maxWidth = 512;
+          const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
+          const w = Math.round(video.videoWidth * scale);
+          const h = Math.round(video.videoHeight * scale);
+
           const canvas = document.createElement("canvas");
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+          canvas.width = w;
+          canvas.height = h;
           const ctx = canvas.getContext("2d");
           if (ctx) {
             ctx.drawImage(video, 0, 0);
-            const base64 = canvas.toDataURL("image/jpeg", 0.7);
+            const base64 = canvas.toDataURL("image/jpeg", 0.5);
             frames.push({
               base64,
               timestamp: video.currentTime,

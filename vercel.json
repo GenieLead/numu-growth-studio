@@ -2,6 +2,15 @@
   "functions": {
     "src/app/api/assets/upload/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/projects/[id]/chat/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/projects/[id]/generate-video/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/projects/[id]/poll-generation/route.ts": {
+      "maxDuration": 30
     }
   }
 }

@@ -63,6 +63,7 @@ export async function callDirector(
       max_tokens: 1024,
       temperature: 0.7,
     }),
+    signal: AbortSignal.timeout(60000), // 60s timeout
   });
 
   if (!res.ok) {

@@ -182,7 +182,7 @@ export function ChatWorkspace({
         if (hasFrames) continue;
 
         try {
-          const framesPromise = extractVideoFrames(videoAtt.url, 6);
+          const framesPromise = extractVideoFrames(videoAtt.url, 4);
           const timeoutPromise = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error("Frame extraction timeout")), 30000)
           );

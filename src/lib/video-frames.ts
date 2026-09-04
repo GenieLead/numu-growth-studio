@@ -4,7 +4,7 @@
  */
 export async function extractVideoFrames(
   videoUrl: string,
-  numFrames: number = 6
+  numFrames: number = 4
 ): Promise<{ base64: string; timestamp: number }[]> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -48,7 +48,7 @@ export async function extractVideoFrames(
           const ctx = canvas.getContext("2d");
           if (ctx) {
             ctx.drawImage(video, 0, 0);
-            const base64 = canvas.toDataURL("image/jpeg", 0.5);
+            const base64 = canvas.toDataURL("image/jpeg", 0.4);
             frames.push({
               base64,
               timestamp: video.currentTime,

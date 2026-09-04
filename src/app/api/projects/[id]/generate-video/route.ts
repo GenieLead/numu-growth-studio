@@ -1,34 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { generations, projects, session } from "@/db/schema";
+import { generations, projects, session as sessionTable, user as userTable } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
 async function getUserFromRequest(request: Request) {
-  // Extract session token from cookie
   const cookieHeader = request.headers.get("cookie") || "";
   const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
   if (!sessionMatch) return null;
-
   const token = sessionMatch[1];
   const now = new Date();
-
-  // Look up session in DB
-  const sessions = await db
-    .select()
-    .from(session)
-    .where(and(eq(session.token, token), gt(session.expiresAt, now)))
-    .limit(1);
-
+  const sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, now))).limit(1);
   if (sessions.length === 0) return null;
-
-  // Get user
-  const users = await db
-    .select()
-    .from((await import("@/db/schema")).user)
-    .where(eq((await import("@/db/schema")).user.id, sessions[0].userId))
-    .limit(1);
-
+  const users = await db.select().from(userTable).where(eq(userTable.id, sessions[0].userId)).limit(1);
   return users.length > 0 ? users[0] : null;
 }
 

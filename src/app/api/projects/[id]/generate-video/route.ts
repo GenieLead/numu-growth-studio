@@ -5,13 +5,11 @@ import { generations, projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
-async function getSessionUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  return session?.user || null;
-}
-
 export async function POST(request: Request) {
-  const user = await getSessionUser(request);
+  // Clone request for auth (auth consumes the body)
+  const authReq = request.clone();
+  const session = await auth.api.getSession({ headers: authReq.headers });
+  const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
@@ -44,7 +42,6 @@ export async function POST(request: Request) {
   try {
     console.log("[Generate] task:", task_type, "prompt length:", prompt?.length);
     console.log("[Generate] refs:", reference_urls?.length, "assets:", asset_urls);
-    console.log("[Generate] settings:", settings);
 
     const result = await routeGeneration(user.id, {
       taskType: task_type as TaskType,
@@ -60,7 +57,6 @@ export async function POST(request: Request) {
 
     console.log("[Generate] result:", result);
 
-    // Save generation record
     const genId = crypto.randomUUID();
     await db.insert(generations).values({
       id: genId,
@@ -90,6 +86,7 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Generation failed";
+    console.error("[Generate error]:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

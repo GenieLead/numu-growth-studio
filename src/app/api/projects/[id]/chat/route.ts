@@ -5,11 +5,6 @@ import { messages, projects, generationPlans } from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
-async function getSessionUser(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  return session?.user || null;
-}
-
 function extractPlanFromText(text: string): any {
   const patterns = [
     /\{[\s\S]*?"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
@@ -147,7 +142,10 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getSessionUser(request);
+  // Clone for auth to avoid consuming body
+  const authReq = request.clone();
+  const session = await auth.api.getSession({ headers: authReq.headers });
+  const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: projectId } = await params;

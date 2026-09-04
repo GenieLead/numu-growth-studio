@@ -115,3 +115,84 @@ export async function analyzeImage(
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
+
+// ─── Video Generation (Seedance) ──────────────────────────────────
+
+export interface VideoGenParams {
+  model: string;
+  prompt: string;
+  duration?: number;
+  resolution?: string;
+  aspectRatio?: string;
+  generateAudio?: boolean;
+  inputReferences?: Array<{ type: string; image_url: { url: string } }>;
+  frameImages?: Array<{
+    type: string;
+    image_url: { url: string };
+    frame_type: "first_frame" | "last_frame";
+  }>;
+}
+
+export interface VideoGenResult {
+  jobId: string;
+  status: "pending" | "in_progress" | "completed" | "failed";
+  videoUrl?: string;
+  cost?: number;
+  error?: string;
+}
+
+export async function submitVideoGeneration(
+  apiKey: string,
+  params: VideoGenParams
+): Promise<{ jobId: string; pollingUrl: string }> {
+  const body: Record<string, unknown> = {
+    model: params.model,
+    prompt: params.prompt,
+  };
+  if (params.duration) body.duration = params.duration;
+  if (params.resolution) body.resolution = params.resolution;
+  if (params.aspectRatio) body.aspect_ratio = params.aspectRatio;
+  if (params.generateAudio !== undefined) body.generate_audio = params.generateAudio;
+  if (params.inputReferences) body.input_references = params.inputReferences;
+  if (params.frameImages) body.frame_images = params.frameImages;
+
+  const res = await fetch("https://openrouter.ai/api/v1/videos", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter video error: ${res.status} - ${err}`);
+  }
+
+  const data = await res.json();
+  return { jobId: data.id, pollingUrl: data.polling_url };
+}
+
+export async function pollVideoGeneration(
+  apiKey: string,
+  jobId: string
+): Promise<VideoGenResult> {
+  const res = await fetch(`https://openrouter.ai/api/v1/videos/${jobId}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter poll error: ${res.status} - ${err}`);
+  }
+
+  const data = await res.json();
+  return {
+    jobId,
+    status: data.status,
+    videoUrl: data.unsigned_urls?.[0],
+    cost: data.usage?.cost,
+    error: data.error,
+  };
+}

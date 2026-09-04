@@ -45,6 +45,12 @@ function getVaceFunction(taskType: TaskType): VaceFunction {
   }
 }
 
+function toAbsoluteUrl(url: string): string {
+  if (url.startsWith("http")) return url;
+  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return `${base}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
 function getSizeForAspect(aspectRatio?: string): string {
   switch (aspectRatio) {
     case "9:16":
@@ -106,7 +112,7 @@ export async function routeGeneration(
       ...(request.characterImageUrl ? [request.characterImageUrl] : []),
       ...(request.productImageUrl ? [request.productImageUrl] : []),
       ...(request.locationImageUrl ? [request.locationImageUrl] : []),
-    ].filter(Boolean);
+    ].filter(Boolean).map(toAbsoluteUrl);
 
     const result = await submitVideoGeneration(orKey, {
       model: "bytedance/seedance-2.5",
@@ -142,7 +148,7 @@ export async function routeGeneration(
       request.locationImageUrl,
     ].filter(Boolean) as string[];
 
-    const allRefs = [...new Set([...imageRefs, ...assetImages])];
+    const allRefs = [...new Set([...imageRefs, ...assetImages])].map(toAbsoluteUrl);
 
     const result = await submitVideoGeneration(orKey, {
       model: "bytedance/seedance-2.5",

@@ -189,7 +189,7 @@ export async function POST(
     } else {
       console.log("[No plan found in response]");
       // Check if user is confirming a previous plan
-      const userText = content.toLowerCase();
+      const userText = (typeof content === "string" ? content : (content as any)?.text || "").toLowerCase();
       const isConfirming = ["generate", "yes", "go ahead", "do it", "make it", "lets go", "let's go"].some(
         (w) => userText.includes(w)
       );

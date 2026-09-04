@@ -539,18 +539,18 @@ export function ChatWorkspace({
                 <div className="text-xs text-neutral-400 space-y-1 mb-3">
                   <p>
                     <span className="text-neutral-500">Type:</span>{" "}
-                    {pendingPlan.task_type.replace(/_/g, " ")}
+                    {pendingPlan.task_type?.replace(/_/g, " ") || "video"}
                   </p>
                   <p>
                     <span className="text-neutral-500">Duration:</span>{" "}
-                    {pendingPlan.settings.duration}s
+                    {pendingPlan.settings?.duration || 10}s
                   </p>
                   <p>
                     <span className="text-neutral-500">Format:</span>{" "}
-                    {pendingPlan.settings.aspect_ratio} ·{" "}
-                    {pendingPlan.settings.resolution}
+                    {pendingPlan.settings?.aspect_ratio || "16:9"} ·{" "}
+                    {pendingPlan.settings?.resolution || "720p"}
                   </p>
-                  {pendingPlan.estimated_credits > 0 && (
+                  {(pendingPlan.estimated_credits || 0) > 0 && (
                     <p>
                       <span className="text-neutral-500">Est. cost:</span>{" "}
                       {pendingPlan.estimated_credits} credits

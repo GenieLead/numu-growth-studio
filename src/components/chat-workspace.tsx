@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Film, Loader2, Check, AlertCircle, Scissors } from "lucide-react";
 import { AudioTimeline } from "@/components/audio-timeline";
+import { extractVideoFrames } from "@/lib/video-frames";
 
 interface Message {
   id: string;
@@ -168,9 +169,33 @@ export function ChatWorkspace({
   ) => {
     if (sending) return;
 
+    // Extract frames from video attachments so the AI can see them
+    let enrichedAttachments = attachments ? [...attachments] : [];
+    const videoAttachments = enrichedAttachments.filter((a) => a.mimeType?.startsWith("video/"));
+
+    if (videoAttachments.length > 0) {
+      for (const videoAtt of videoAttachments) {
+        try {
+          const frames = await extractVideoFrames(videoAtt.url, 6);
+          for (let i = 0; i < frames.length; i++) {
+            enrichedAttachments.push({
+              assetId: `frame-${videoAtt.assetId}-${i}`,
+              url: frames[i].base64,
+              name: `${videoAtt.name} frame at ${frames[i].timestamp.toFixed(1)}s`,
+              mimeType: "image/jpeg",
+              kind: "video_frame",
+              customName: `${videoAtt.customName || videoAtt.name} [${frames[i].timestamp.toFixed(1)}s]`,
+            });
+          }
+        } catch (err) {
+          console.error("Failed to extract frames from video:", err);
+        }
+      }
+    }
+
     const content =
-      attachments && attachments.length > 0
-        ? { text, attachments }
+      enrichedAttachments.length > 0
+        ? { text, attachments: enrichedAttachments }
         : text;
 
     const userMsg: Message = {

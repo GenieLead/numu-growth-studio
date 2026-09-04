@@ -253,6 +253,7 @@ export async function POST(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to get response";
     console.error("[Chat error]:", message);
+    console.error("[Chat error stack]:", error instanceof Error ? error.stack : "no stack");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

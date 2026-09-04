@@ -67,6 +67,7 @@ export async function callDirector(
 
   if (!res.ok) {
     const err = await res.text();
+    console.error("[OpenRouter error]:", res.status, err.substring(0, 500));
     throw new Error(`OpenRouter error: ${res.status} - ${err}`);
   }
 

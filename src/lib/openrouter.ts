@@ -166,9 +166,12 @@ export async function submitVideoGeneration(
     body: JSON.stringify(body),
   });
 
+  const responseData = await res.json().catch(() => null);
+
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter video error: ${res.status} - ${err}`);
+    const errorMsg = responseData?.error?.message || responseData?.error || res.statusText;
+    console.error("[OpenRouter video error]:", res.status, errorMsg);
+    throw new Error(`Video generation failed: ${res.status} - ${errorMsg}`);
   }
 
   const data = await res.json();

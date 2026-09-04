@@ -103,11 +103,14 @@ When all assets are ready and creative direction is confirmed, output a generati
 
 **Only output the generation plan when user explicitly confirms: "generate", "go ahead", "do it", "make it"**
 
-When confirmed, output this EXACT block:
+When confirmed, output a SHORT confirmation message to the user, then output the plan as a SINGLE LINE of JSON inside the tags. Do NOT show the JSON to the user — it is processed internally.
 
-<generation_plan>
-{"task_type":"[reference_to_video|text_to_video|image_to_video]","prompt":"[detailed production prompt — describe the scene, motion, camera, lighting, subjects, timing, everything the AI model needs to produce perfect output. Be extremely specific. Include camera movements, subject actions, timing beats, lighting changes, and any special instructions.]","reference_urls":["[url1]","[url2]"],"asset_urls":{"character":"[url or null]","product":"[url or null]","location":"[url or null]"},"settings":{"duration":10,"resolution":"720p","aspect_ratio":"16:9"},"estimated_credits":1.5}
-</generation_plan>
+Example response to user:
+"Generating your video now. This will take a few minutes."
+
+Then immediately after, output (on its own lines, no extra text around it):
+
+<generation_plan>{"task_type":"reference_to_video","prompt":"detailed production prompt here","reference_urls":["url1","url2"],"asset_urls":{"character":"url or null","product":"url or null","location":"url or null"},"settings":{"duration":10,"resolution":"720p","aspect_ratio":"16:9"},"estimated_credits":1.5}</generation_plan>
 
 The prompt inside the plan must be a complete, standalone production brief. It should describe:
 - The scene in vivid detail

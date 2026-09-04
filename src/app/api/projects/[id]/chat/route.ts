@@ -107,35 +107,51 @@ export async function POST(
     const response = await callDirector(user.id, openRouterMessages);
     let responseText = response.text;
 
-    // Check for generation plan in the response
-    const planMatch = responseText.match(/<generation_plan>([\s\S]*?)<\/generation_plan>/);
+    // Check for generation plan — try multiple patterns
+    const planPatterns = [
+      /<generation_plan>([\s\S]*?)<\/generation_plan>/,
+      /```(?:json)?\s*([\s\S]*?"task_type"[\s\S]*?)```/,
+      /```(?:json)?\s*([\s\S]*?"tasktype"[\s\S]*?)```/,
+      /\{"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
+      /\{"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
+    ];
+
     let generationPlan = null;
 
-    if (planMatch) {
-      try {
-        const raw = JSON.parse(planMatch[1]);
-        // Normalize keys — Director may output camelCase or missing underscores
-        generationPlan = {
-          task_type: raw.task_type || raw.tasktype || "reference_to_video",
-          prompt: raw.prompt || "",
-          reference_urls: raw.reference_urls || raw.referenceurls || [],
-          asset_urls: {
-            character: raw.asset_urls?.character || raw.asseturls?.character || null,
-            product: raw.asset_urls?.product || raw.asseturls?.product || null,
-            location: raw.asset_urls?.location || raw.asseturls?.location || null,
-          },
-          settings: {
-            duration: raw.settings?.duration || 10,
-            resolution: raw.settings?.resolution || "720p",
-            aspect_ratio: raw.settings?.aspect_ratio || raw.settings?.aspectratio || "16:9",
-          },
-          estimated_credits: raw.estimated_credits || raw.estimatedcredits || 0,
-        };
-        responseText = responseText
-          .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/, "")
-          .trim();
-      } catch (e) {
-        console.error("Failed to parse generation plan:", e);
+    for (const pattern of planPatterns) {
+      const match = responseText.match(pattern);
+      if (match) {
+        try {
+          const jsonStr = match[1] || match[0];
+          const raw = JSON.parse(jsonStr);
+          // Normalize keys
+          generationPlan = {
+            task_type: raw.task_type || raw.tasktype || "reference_to_video",
+            prompt: raw.prompt || "",
+            reference_urls: raw.reference_urls || raw.referenceurls || [],
+            asset_urls: {
+              character: raw.asset_urls?.character || raw.asseturls?.character || null,
+              product: raw.asset_urls?.product || raw.asseturls?.product || null,
+              location: raw.asset_urls?.location || raw.asseturls?.location || null,
+            },
+            settings: {
+              duration: raw.settings?.duration || 10,
+              resolution: raw.settings?.resolution || "720p",
+              aspect_ratio: raw.settings?.aspect_ratio || raw.settings?.aspectratio || "16:9",
+            },
+            estimated_credits: raw.estimated_credits || raw.estimatedcredits || 0,
+          };
+          // Remove the plan from displayed text — try all patterns
+          responseText = responseText
+            .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/, "")
+            .replace(/```(?:json)?\s*[\s\S]*?```/g, "")
+            .replace(/\{"task_type"[\s\S]*?\}/g, "")
+            .replace(/\{"tasktype"[\s\S]*?\}/g, "")
+            .trim();
+          break;
+        } catch (e) {
+          console.error("Failed to parse generation plan JSON:", e);
+        }
       }
     }
 

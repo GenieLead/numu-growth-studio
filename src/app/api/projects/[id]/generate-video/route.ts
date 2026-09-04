@@ -5,19 +5,17 @@ import { generations, projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
+async function getSessionUser(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  return session?.user || null;
+}
+
 export async function POST(request: Request) {
-  // Read body FIRST, then use auth on cloned request
+  // Read body FIRST — auth.api.getSession reads headers only but better-auth
+  // may consume body on some Next.js versions. Read body before auth to be safe.
   const body = await request.json();
 
-  let user: any = null;
-  try {
-    const sessionResponse = await auth.handler(request.clone());
-    const sessionData = await sessionResponse.json();
-    user = sessionData?.user || null;
-  } catch (e) {
-    console.error("[Generate auth error]:", e);
-  }
-
+  const user = await getSessionUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const {

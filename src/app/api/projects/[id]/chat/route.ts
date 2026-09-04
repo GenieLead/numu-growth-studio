@@ -5,24 +5,19 @@ import { messages, projects, generationPlans } from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
+async function getSessionUser(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers });
+  return session?.user || null;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Read body FIRST, then use auth.handler on cloned request
-  const body = await request.json();
-
-  let user: any = null;
-  try {
-    const sessionResponse = await auth.handler(request.clone());
-    const sessionData = await sessionResponse.json();
-    user = sessionData?.user || null;
-  } catch (e) {
-    console.error("[Chat auth error]:", e);
-  }
-
+  const user = await getSessionUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const body = await request.json();
   const { id: projectId } = await params;
   const { content } = body;
 
@@ -204,7 +199,6 @@ function buildPlanFromContext(history: any[], projectId: string): any {
   const allImages = allAttachments.filter((a) => a.mimeType?.startsWith("image/"));
   const userText = allTexts.join(" ").toLowerCase();
 
-  // Find analysis text from Director
   let analysisText = "";
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].role === "assistant") {

@@ -4,12 +4,29 @@ import { db } from "@/db";
 import { messages, projects, generationPlans, session as sessionTable, user as userTable } from "@/db/schema";
 import { eq, asc, desc, gt, and } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
+import crypto from "crypto";
+
+const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
+
+function unsignCookie(signedValue: string): string | null {
+  const parts = signedValue.split(".");
+  if (parts.length !== 2) return signedValue;
+  const [value, signature] = parts;
+  const expectedSig = crypto
+    .createHmac("sha256", AUTH_SECRET)
+    .update(value)
+    .digest("base64url");
+  if (signature === expectedSig) return value;
+  return null;
+}
 
 async function getUserFromRequest(request: Request) {
   const cookieHeader = request.headers.get("cookie") || "";
   const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
   if (!sessionMatch) return null;
-  const token = sessionMatch[1];
+  const signedToken = sessionMatch[1];
+  const token = unsignCookie(signedToken);
+  if (!token) return null;
   const now = new Date();
   const sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, now))).limit(1);
   if (sessions.length === 0) return null;

@@ -7,32 +7,27 @@ import crypto from "crypto";
 
 const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
 
-function unsignCookie(signedValue: string): string | null {
-  // better-auth signs cookies as: value.signature
-  const parts = signedValue.split(".");
-  if (parts.length !== 2) return signedValue; // Not signed, return as-is
-  const [value, signature] = parts;
-  const expectedSig = crypto
-    .createHmac("sha256", AUTH_SECRET)
-    .update(value)
-    .digest("base64url");
-  if (signature === expectedSig) return value;
-  return null; // Invalid signature
-}
-
 async function getUserFromRequest(request: Request) {
   const cookieHeader = request.headers.get("cookie") || "";
   const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
   if (!sessionMatch) return null;
 
-  const signedToken = sessionMatch[1];
-  const token = unsignCookie(signedToken);
-  if (!token) return null;
-
+  const rawValue = sessionMatch[1];
   const now = new Date();
-  const sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, now))).limit(1);
-  if (sessions.length === 0) return null;
 
+  // Try raw value first
+  let sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, rawValue), gt(sessionTable.expiresAt, now))).limit(1);
+
+  // If not found, try unsigning
+  if (sessions.length === 0 && rawValue.includes(".")) {
+    const value = rawValue.split(".")[0];
+    const expectedSig = crypto.createHmac("sha256", AUTH_SECRET).update(value).digest("base64url");
+    if (rawValue.split(".")[1] === expectedSig) {
+      sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, value), gt(sessionTable.expiresAt, now))).limit(1);
+    }
+  }
+
+  if (sessions.length === 0) return null;
   const users = await db.select().from(userTable).where(eq(userTable.id, sessions[0].userId)).limit(1);
   return users.length > 0 ? users[0] : null;
 }

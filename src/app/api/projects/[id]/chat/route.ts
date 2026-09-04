@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages, projects } from "@/db/schema";
+import { messages, projects, generationPlans } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
@@ -35,9 +35,6 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Note: User message is saved by the frontend via /messages endpoint
-  // We only need to fetch history and call the Director
-
   // Fetch full conversation history
   const history = await db
     .select()
@@ -62,7 +59,6 @@ export async function POST(
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         for (const att of attachments) {
           if (att.mimeType?.startsWith("image/") && att.url) {
-            // Support both HTTP URLs and base64 data URLs
             const fullUrl = att.url.startsWith("http") || att.url.startsWith("data:")
               ? att.url
               : `${baseUrl}${att.url}`;
@@ -106,26 +102,32 @@ export async function POST(
   try {
     const response = await callDirector(user.id, openRouterMessages);
     let responseText = response.text;
+    let generationPlan = null;
 
-    // Check for generation plan — try multiple patterns
-    const planPatterns = [
-      /<generation_plan>([\s\S]*?)<\/generation_plan>/,
-      /```(?:json)?\s*([\s\S]*?"task_type"[\s\S]*?)```/,
-      /```(?:json)?\s*([\s\S]*?"tasktype"[\s\S]*?)```/,
+    // Try to find and parse generation plan JSON from the response
+    // The Director may output it in various formats
+    const jsonPatterns = [
       /\{"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
       /\{"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
     ];
 
-    let generationPlan = null;
-
-    for (const pattern of planPatterns) {
+    for (const pattern of jsonPatterns) {
       const match = responseText.match(pattern);
       if (match) {
         try {
-          const jsonStr = match[1] || match[0];
+          // Find the matching closing brace
+          let braceCount = 0;
+          let endIdx = 0;
+          for (let i = 0; i < match[0].length; i++) {
+            if (match[0][i] === "{") braceCount++;
+            if (match[0][i] === "}") braceCount--;
+            if (braceCount === 0) { endIdx = i + 1; break; }
+          }
+          const jsonStr = match[0].substring(0, endIdx);
           const raw = JSON.parse(jsonStr);
-          // Normalize keys
-          generationPlan = {
+
+          // Normalize and save
+          const planData = {
             task_type: raw.task_type || raw.tasktype || "reference_to_video",
             prompt: raw.prompt || "",
             reference_urls: raw.reference_urls || raw.referenceurls || [],
@@ -141,19 +143,43 @@ export async function POST(
             },
             estimated_credits: raw.estimated_credits || raw.estimatedcredits || 0,
           };
-          // Remove the plan from displayed text — try all patterns
+
+          // Save to generation_plans table
+          const planId = crypto.randomUUID();
+          await db.insert(generationPlans).values({
+            id: planId,
+            projectId,
+            taskType: planData.task_type,
+            prompt: planData.prompt,
+            referenceUrls: planData.reference_urls,
+            assetUrls: planData.asset_urls,
+            settings: planData.settings,
+            estimatedCredits: planData.estimated_credits,
+            status: "pending",
+            createdAt: new Date(),
+          });
+
+          generationPlan = { id: planId, ...planData };
+
+          // Remove all JSON-like content from displayed text
           responseText = responseText
-            .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/, "")
-            .replace(/```(?:json)?\s*[\s\S]*?```/g, "")
+            .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/g, "")
+            .replace(/```[\s\S]*?```/g, "")
             .replace(/\{"task_type"[\s\S]*?\}/g, "")
             .replace(/\{"tasktype"[\s\S]*?\}/g, "")
             .trim();
           break;
         } catch (e) {
-          console.error("Failed to parse generation plan JSON:", e);
+          console.error("Failed to parse generation plan:", e);
         }
       }
     }
+
+    // If we still have leftover JSON tags, strip them
+    responseText = responseText
+      .replace(/<generation_plan>[\s\S]*/g, "")
+      .replace(/```json[\s\S]*/g, "")
+      .trim();
 
     // Save assistant message
     const assistantMsgId = crypto.randomUUID();
@@ -161,12 +187,13 @@ export async function POST(
       id: assistantMsgId,
       projectId,
       role: "assistant",
-      content: responseText,
+      content: responseText || "Ready to generate.",
+      generationPlanId: generationPlan?.id || null,
       createdAt: new Date(),
     });
 
     return NextResponse.json({
-      text: responseText,
+      text: responseText || "Ready to generate.",
       model: response.model,
       messageId: assistantMsgId,
       generationPlan,

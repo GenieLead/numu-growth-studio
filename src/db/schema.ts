@@ -102,6 +102,7 @@ export const messages = pgTable(
     projectId: text("project_id").notNull(),
     role: text("role").notNull(), // user | assistant | system_event
     content: jsonb("content").notNull(),
+    generationPlanId: text("generation_plan_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("messages_project_id_idx").on(table.projectId)]
@@ -257,12 +258,31 @@ export const audioTracks = pgTable(
   ]
 );
 
+// ─── Generation Plans ────────────────────────────────────────────
+export const generationPlans = pgTable(
+  "generation_plans",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    taskType: text("task_type").notNull(),
+    prompt: text("prompt").notNull(),
+    referenceUrls: jsonb("reference_urls").default([]).notNull(),
+    assetUrls: jsonb("asset_urls").default({}).notNull(),
+    settings: jsonb("settings").default({}).notNull(),
+    estimatedCredits: real("estimated_credits").default(0),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("generation_plans_project_id_idx").on(table.projectId)]
+);
+
 // ─── Relations ───────────────────────────────────────────────────
 export const projectsRelations = relations(projects, ({ many }) => ({
   messages: many(messages),
   assets: many(projectAssets),
   generations: many(generations),
   audioTracks: many(audioTracks),
+  generationPlans: many(generationPlans),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
@@ -289,6 +309,13 @@ export const generationsRelations = relations(generations, ({ one }) => ({
 export const audioTracksRelations = relations(audioTracks, ({ one }) => ({
   project: one(projects, {
     fields: [audioTracks.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const generationPlansRelations = relations(generationPlans, ({ one }) => ({
+  project: one(projects, {
+    fields: [generationPlans.projectId],
     references: [projects.id],
   }),
 }));

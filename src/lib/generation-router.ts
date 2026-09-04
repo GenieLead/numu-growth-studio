@@ -71,26 +71,56 @@ export async function routeGeneration(
   const vaceTasks: TaskType[] = ["object_swap", "video_restyle", "video_extend"];
 
   if (vaceTasks.includes(request.taskType)) {
-    if (!dsKey) throw new Error("Video editing requires DashScope API key. Add DASHSCOPE_API_KEY to environment.");
+    if (dsKey) {
+      // Use VACE if DashScope is available
+      const vaceResult = await submitVaceTask(dsKey, {
+        function: getVaceFunction(request.taskType),
+        prompt: request.prompt,
+        videoUrl: request.referenceVideoUrl,
+        refImagesUrl: [
+          ...(request.referenceImageUrls || []),
+          ...(request.characterImageUrl ? [request.characterImageUrl] : []),
+          ...(request.productImageUrl ? [request.productImageUrl] : []),
+          ...(request.locationImageUrl ? [request.locationImageUrl] : []),
+        ].filter(Boolean),
+        maskImageUrl: request.maskImageUrl,
+        size: getSizeForAspect(request.aspectRatio),
+      });
 
-    const vaceResult = await submitVaceTask(dsKey, {
-      function: getVaceFunction(request.taskType),
+      return {
+        provider: "dashscope",
+        taskId: vaceResult.taskId,
+        model: "wan2.1-vace-plus",
+      };
+    }
+
+    // Fallback to Seedance R2V when DashScope is not available
+    // object_swap / video_restyle → Seedance R2V with reference images
+    // video_extend → Seedance R2V (regenerate with extended duration)
+    if (!orKey) throw new Error("No API key available. Connect OpenRouter in Settings.");
+
+    const allRefs = [
+      ...(request.referenceImageUrls || []),
+      ...(request.characterImageUrl ? [request.characterImageUrl] : []),
+      ...(request.productImageUrl ? [request.productImageUrl] : []),
+      ...(request.locationImageUrl ? [request.locationImageUrl] : []),
+    ].filter(Boolean);
+
+    const result = await submitVideoGeneration(orKey, {
+      model: "bytedance/seedance-2.5",
       prompt: request.prompt,
-      videoUrl: request.referenceVideoUrl,
-      refImagesUrl: [
-        ...(request.referenceImageUrls || []),
-        ...(request.characterImageUrl ? [request.characterImageUrl] : []),
-        ...(request.productImageUrl ? [request.productImageUrl] : []),
-        ...(request.locationImageUrl ? [request.locationImageUrl] : []),
-      ].filter(Boolean),
-      maskImageUrl: request.maskImageUrl,
-      size: getSizeForAspect(request.aspectRatio),
+      duration: request.duration || 10,
+      resolution: request.resolution || "720p",
+      aspectRatio: request.aspectRatio || "16:9",
+      inputReferences: allRefs.length > 0
+        ? allRefs.map((url) => ({ type: "image_url", image_url: { url } }))
+        : undefined,
     });
 
     return {
-      provider: "dashscope",
-      taskId: vaceResult.taskId,
-      model: "wan2.1-vace-plus",
+      provider: "openrouter",
+      taskId: result.jobId,
+      model: "bytedance/seedance-2.5",
     };
   }
 

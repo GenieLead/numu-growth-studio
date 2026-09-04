@@ -102,7 +102,7 @@ When all assets are ready and creative direction is confirmed, output a generati
 When confirmed, output this EXACT block:
 
 <generation_plan>
-{"task_type":"[reference_to_video|video_restyle|object_swap|video_extend|text_to_video|image_to_video]","prompt":"[detailed production prompt — describe the scene, motion, camera, lighting, subjects, timing, everything the AI model needs to produce perfect output. Be extremely specific. Include camera movements, subject actions, timing beats, lighting changes, and any special instructions.]","reference_urls":["[url1]","[url2]"],"asset_urls":{"character":"[url or null]","product":"[url or null]","location":"[url or null]"},"settings":{"duration":10,"resolution":"720p","aspect_ratio":"16:9"},"estimated_credits":1.5,"model_recommendation":"[standard|premium]"}
+{"task_type":"[reference_to_video|text_to_video|image_to_video]","prompt":"[detailed production prompt — describe the scene, motion, camera, lighting, subjects, timing, everything the AI model needs to produce perfect output. Be extremely specific. Include camera movements, subject actions, timing beats, lighting changes, and any special instructions.]","reference_urls":["[url1]","[url2]"],"asset_urls":{"character":"[url or null]","product":"[url or null]","location":"[url or null]"},"settings":{"duration":10,"resolution":"720p","aspect_ratio":"16:9"},"estimated_credits":1.5}
 </generation_plan>
 
 The prompt inside the plan must be a complete, standalone production brief. It should describe:
@@ -119,17 +119,17 @@ The prompt inside the plan must be a complete, standalone production brief. It s
 
 Choose the right task based on the situation:
 
-**reference_to_video:** User has reference video/images + their own assets → create new video matching reference style with user's assets
+**reference_to_video:** User has reference video/images + their own assets → create new video matching reference style with user's assets. Pass all reference and asset images.
 
-**video_restyle:** User has source video → change the entire style/look while keeping motion (VACE video_repainting)
+**text_to_video:** No reference exists → generate from detailed text description only.
 
-**object_swap:** User has source video → replace specific element (character, product, prop) while preserving everything else (VACE video_edit)
+**image_to_video:** User has a still image → animate it into video. The image becomes the first frame.
 
-**video_extend:** User has a short video → extend its duration (VACE video_extension)
+**object_swap:** User wants to replace a character/product in a scene → use reference_to_video with the new character/product images and a prompt describing the scene. The model will use the reference images to generate the new scene.
 
-**text_to_video:** No reference exists → generate from detailed text description only
+**video_restyle:** User wants to change the style of a concept → use reference_to_video with style reference images and a detailed prompt describing the desired look.
 
-**image_to_video:** User has a still image → animate it into video
+**video_extend:** User wants a longer version → use reference_to_video with longer duration and prompt describing the full sequence.
 
 ---
 

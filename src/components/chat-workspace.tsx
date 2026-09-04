@@ -169,16 +169,21 @@ export function ChatWorkspace({
   ) => {
     if (sending) return;
 
-    // Extract frames from video attachments so the AI can see them
+    // Extract frames from NEW video attachments only (not re-extract)
     let enrichedAttachments = attachments ? [...attachments] : [];
     const videoAttachments = enrichedAttachments.filter((a) => a.mimeType?.startsWith("video/"));
 
     if (videoAttachments.length > 0) {
       for (const videoAtt of videoAttachments) {
+        // Check if this video already has extracted frames in the message
+        const hasFrames = enrichedAttachments.some(
+          (a) => a.kind === "video_frame" && a.name?.includes(videoAtt.name)
+        );
+        if (hasFrames) continue;
+
         try {
           const frames = await extractVideoFrames(videoAtt.url, 6);
           for (let i = 0; i < frames.length; i++) {
-            // Convert base64 to blob and upload as asset
             const blob = fetch(frames[i].base64).then((r) => r.blob());
             const file = new File([await blob], `frame-${i}.jpg`, { type: "image/jpeg" });
             const fd = new FormData();

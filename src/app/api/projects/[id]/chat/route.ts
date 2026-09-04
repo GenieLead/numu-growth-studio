@@ -81,9 +81,20 @@ export async function POST(
     .where(eq(messages.projectId, projectId))
     .orderBy(asc(messages.createdAt));
 
-  // Build OpenRouter messages
-  const recentHistory = history.slice(-30);
-  const openRouterMessages: ChatMessage[] = recentHistory.map((m) => {
+  // Build OpenRouter messages — only include images from most recent message
+  const recentHistory = history.slice(-20);
+
+  // Find the last message with attachments
+  let lastAttachmentMsgIdx = -1;
+  for (let i = recentHistory.length - 1; i >= 0; i--) {
+    const c = recentHistory[i].content as any;
+    if (c?.attachments?.length > 0) {
+      lastAttachmentMsgIdx = i;
+      break;
+    }
+  }
+
+  const openRouterMessages: ChatMessage[] = recentHistory.map((m, idx) => {
     const role = m.role as "user" | "assistant";
     const msgContent = m.content;
 
@@ -92,7 +103,10 @@ export async function POST(
       const text = contentObj.text || "";
       const attachments = contentObj.attachments || [];
 
-      if (attachments.length > 0) {
+      // Only include images from the most recent message with attachments
+      const showImages = idx === lastAttachmentMsgIdx;
+
+      if (attachments.length > 0 && showImages) {
         const parts: ContentPart[] = [];
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         for (const att of attachments) {
@@ -118,6 +132,8 @@ export async function POST(
         parts.push({ type: "text", text: fullText });
         return { role, content: parts };
       }
+
+      // For older messages, only include text (no images)
       return { role, content: text };
     }
     return { role, content: String(msgContent) };

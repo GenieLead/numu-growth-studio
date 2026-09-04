@@ -6,13 +6,16 @@ import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
 export async function POST(request: Request) {
-  // Clone request for auth (auth consumes the body)
-  const authReq = request.clone();
-  const session = await auth.api.getSession({ headers: authReq.headers });
+  // Read body FIRST before auth consumes it
+  const body = await request.json();
+
+  // Auth only needs headers — create a minimal request-like object
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
   const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
   const {
     projectId,
     task_type,
@@ -41,7 +44,6 @@ export async function POST(request: Request) {
 
   try {
     console.log("[Generate] task:", task_type, "prompt length:", prompt?.length);
-    console.log("[Generate] refs:", reference_urls?.length, "assets:", asset_urls);
 
     const result = await routeGeneration(user.id, {
       taskType: task_type as TaskType,
@@ -54,8 +56,6 @@ export async function POST(request: Request) {
       resolution: settings?.resolution,
       aspectRatio: settings?.aspect_ratio,
     });
-
-    console.log("[Generate] result:", result);
 
     const genId = crypto.randomUUID();
     await db.insert(generations).values({

@@ -144,14 +144,13 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Clone for auth to avoid consuming body
-  const authReq = request.clone();
-  const session = await auth.api.getSession({ headers: authReq.headers });
+  // Read body FIRST before auth
+  const body = await request.json();
+  const session = await auth.api.getSession({ headers: request.headers });
   const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: projectId } = await params;
-  const body = await request.json();
   const { content } = body;
 
   if (!content) {

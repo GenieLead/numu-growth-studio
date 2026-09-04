@@ -2,12 +2,51 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { messages, projects, generationPlans } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   return session?.user || null;
+}
+
+function extractPlanFromText(text: string): any {
+  // Try to find JSON object with task_type or tasktype
+  const patterns = [
+    /\{[\s\S]*?"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
+    /\{[\s\S]*?"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      // Find matching closing brace
+      let braceCount = 0;
+      let endIdx = 0;
+      for (let i = 0; i < match[0].length; i++) {
+        if (match[0][i] === "{") braceCount++;
+        if (match[0][i] === "}") braceCount--;
+        if (braceCount === 0) { endIdx = i + 1; break; }
+      }
+      const jsonStr = match[0].substring(0, endIdx);
+      try {
+        return JSON.parse(jsonStr);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
+
+function cleanResponseText(text: string): string {
+  return text
+    .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\{"task_type"[\s\S]*?\}/g, "")
+    .replace(/\{"tasktype"[\s\S]*?\}/g, "")
+    .replace(/<[^>]*generation[^>]*>/g, "")
+    .trim();
 }
 
 export async function POST(
@@ -42,7 +81,7 @@ export async function POST(
     .where(eq(messages.projectId, projectId))
     .orderBy(asc(messages.createdAt));
 
-  // Build OpenRouter messages — include images in every message that has them
+  // Build OpenRouter messages
   const recentHistory = history.slice(-30);
   const openRouterMessages: ChatMessage[] = recentHistory.map((m) => {
     const role = m.role as "user" | "assistant";
@@ -55,46 +94,32 @@ export async function POST(
 
       if (attachments.length > 0) {
         const parts: ContentPart[] = [];
-
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
         for (const att of attachments) {
           if (att.mimeType?.startsWith("image/") && att.url) {
             const fullUrl = att.url.startsWith("http") || att.url.startsWith("data:")
-              ? att.url
-              : `${baseUrl}${att.url}`;
-            parts.push({
-              type: "image_url",
-              image_url: { url: fullUrl },
-            });
+              ? att.url : `${baseUrl}${att.url}`;
+            parts.push({ type: "image_url", image_url: { url: fullUrl } });
           }
         }
-
         const videos = attachments.filter((a: any) => a.mimeType?.startsWith("video/"));
         if (videos.length > 0) {
           const videoLabels = videos.map((v: any) => {
             const label = v.customName || v.name || "video reference";
-            return `[Video uploaded: "${label}" — user should describe motion/pacing]`;
+            return `[Video: "${label}"]`;
           }).join("\n");
           parts.push({ type: "text", text: videoLabels });
         }
-
         const refLabels = attachments
           .filter((a: any) => a.customName)
-          .map((a: any) => `@${a.customName} (${a.kind || "reference"})`)
+          .map((a: any) => `@${a.customName} (${a.kind || "ref"})`)
           .join(", ");
-
-        const fullText = refLabels
-          ? `[References: ${refLabels}]\n${text}`
-          : text;
-
+        const fullText = refLabels ? `[Refs: ${refLabels}]\n${text}` : text;
         parts.push({ type: "text", text: fullText });
-
         return { role, content: parts };
       }
-
       return { role, content: text };
     }
-
     return { role, content: String(msgContent) };
   });
 
@@ -102,84 +127,93 @@ export async function POST(
   try {
     const response = await callDirector(user.id, openRouterMessages);
     let responseText = response.text;
+
+    console.log("[Director raw response length]:", responseText.length);
+    console.log("[Director raw response start]:", responseText.substring(0, 500));
+
+    // Try to extract plan from response
     let generationPlan = null;
+    const rawPlan = extractPlanFromText(responseText);
 
-    // Try to find and parse generation plan JSON from the response
-    // The Director may output it in various formats
-    const jsonPatterns = [
-      /\{"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
-      /\{"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
-    ];
+    if (rawPlan) {
+      console.log("[Plan found in response]");
+      const planData = {
+        task_type: rawPlan.task_type || rawPlan.tasktype || "reference_to_video",
+        prompt: rawPlan.prompt || "",
+        reference_urls: rawPlan.reference_urls || rawPlan.referenceurls || [],
+        asset_urls: {
+          character: rawPlan.asset_urls?.character || rawPlan.asseturls?.character || null,
+          product: rawPlan.asset_urls?.product || rawPlan.asseturls?.product || null,
+          location: rawPlan.asset_urls?.location || rawPlan.asseturls?.location || null,
+        },
+        settings: {
+          duration: rawPlan.settings?.duration || 10,
+          resolution: rawPlan.settings?.resolution || "720p",
+          aspect_ratio: rawPlan.settings?.aspect_ratio || rawPlan.settings?.aspectratio || "16:9",
+        },
+        estimated_credits: rawPlan.estimated_credits || rawPlan.estimatedcredits || 0,
+      };
 
-    for (const pattern of jsonPatterns) {
-      const match = responseText.match(pattern);
-      if (match) {
-        try {
-          // Find the matching closing brace
-          let braceCount = 0;
-          let endIdx = 0;
-          for (let i = 0; i < match[0].length; i++) {
-            if (match[0][i] === "{") braceCount++;
-            if (match[0][i] === "}") braceCount--;
-            if (braceCount === 0) { endIdx = i + 1; break; }
-          }
-          const jsonStr = match[0].substring(0, endIdx);
-          const raw = JSON.parse(jsonStr);
+      // Save to DB
+      const planId = crypto.randomUUID();
+      await db.insert(generationPlans).values({
+        id: planId,
+        projectId,
+        taskType: planData.task_type,
+        prompt: planData.prompt,
+        referenceUrls: planData.reference_urls as any,
+        assetUrls: planData.asset_urls as any,
+        settings: planData.settings as any,
+        estimatedCredits: planData.estimated_credits,
+        status: "pending",
+        createdAt: new Date(),
+      } as any);
 
-          // Normalize and save
-          const planData = {
-            task_type: raw.task_type || raw.tasktype || "reference_to_video",
-            prompt: raw.prompt || "",
-            reference_urls: raw.reference_urls || raw.referenceurls || [],
+      generationPlan = { id: planId, ...planData };
+    } else {
+      console.log("[No plan found in response]");
+      // Check if user is confirming a previous plan
+      const userText = content.toLowerCase();
+      const isConfirming = ["generate", "yes", "go ahead", "do it", "make it", "lets go", "let's go"].some(
+        (w) => userText.includes(w)
+      );
+
+      if (isConfirming) {
+        // Look for the most recent pending plan in this project
+        const lastPlan = await db
+          .select()
+          .from(generationPlans)
+          .where(eq(generationPlans.projectId, projectId))
+          .orderBy(desc(generationPlans.createdAt))
+          .limit(1);
+
+        if (lastPlan.length > 0 && lastPlan[0].status === "pending") {
+          console.log("[Using previous plan]:", lastPlan[0].id);
+          const assetUrls = lastPlan[0].assetUrls as any;
+          const settings = lastPlan[0].settings as any;
+          generationPlan = {
+            id: lastPlan[0].id,
+            task_type: lastPlan[0].taskType,
+            prompt: lastPlan[0].prompt,
+            reference_urls: lastPlan[0].referenceUrls,
             asset_urls: {
-              character: raw.asset_urls?.character || raw.asseturls?.character || null,
-              product: raw.asset_urls?.product || raw.asseturls?.product || null,
-              location: raw.asset_urls?.location || raw.asseturls?.location || null,
+              character: assetUrls?.character || null,
+              product: assetUrls?.product || null,
+              location: assetUrls?.location || null,
             },
             settings: {
-              duration: raw.settings?.duration || 10,
-              resolution: raw.settings?.resolution || "720p",
-              aspect_ratio: raw.settings?.aspect_ratio || raw.settings?.aspectratio || "16:9",
+              duration: settings?.duration || 10,
+              resolution: settings?.resolution || "720p",
+              aspect_ratio: settings?.aspect_ratio || "16:9",
             },
-            estimated_credits: raw.estimated_credits || raw.estimatedcredits || 0,
+            estimated_credits: lastPlan[0].estimatedCredits || 0,
           };
-
-          // Save to generation_plans table
-          const planId = crypto.randomUUID();
-          await db.insert(generationPlans).values({
-            id: planId,
-            projectId,
-            taskType: planData.task_type,
-            prompt: planData.prompt,
-            referenceUrls: planData.reference_urls,
-            assetUrls: planData.asset_urls,
-            settings: planData.settings,
-            estimatedCredits: planData.estimated_credits,
-            status: "pending",
-            createdAt: new Date(),
-          });
-
-          generationPlan = { id: planId, ...planData };
-
-          // Remove all JSON-like content from displayed text
-          responseText = responseText
-            .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/g, "")
-            .replace(/```[\s\S]*?```/g, "")
-            .replace(/\{"task_type"[\s\S]*?\}/g, "")
-            .replace(/\{"tasktype"[\s\S]*?\}/g, "")
-            .trim();
-          break;
-        } catch (e) {
-          console.error("Failed to parse generation plan:", e);
         }
       }
     }
 
-    // If we still have leftover JSON tags, strip them
-    responseText = responseText
-      .replace(/<generation_plan>[\s\S]*/g, "")
-      .replace(/```json[\s\S]*/g, "")
-      .trim();
+    // Clean displayed text
+    responseText = cleanResponseText(responseText);
 
     // Save assistant message
     const assistantMsgId = crypto.randomUUID();
@@ -192,6 +226,8 @@ export async function POST(
       createdAt: new Date(),
     });
 
+    console.log("[Response sent] plan:", !!generationPlan, "text length:", responseText.length);
+
     return NextResponse.json({
       text: responseText || "Ready to generate.",
       model: response.model,
@@ -200,6 +236,7 @@ export async function POST(
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to get response";
+    console.error("[Chat error]:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

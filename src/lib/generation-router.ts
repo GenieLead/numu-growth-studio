@@ -67,6 +67,8 @@ export async function routeGeneration(
   const orKey = await getOpenRouterKey(userId);
   const dsKey = process.env.DASHSCOPE_API_KEY;
 
+  console.log("[Router] taskType:", request.taskType, "orKey:", !!orKey, "dsKey:", !!dsKey);
+
   // VACE-capable tasks: object_swap, video_restyle, video_extend
   const vaceTasks: TaskType[] = ["object_swap", "video_restyle", "video_extend"];
 

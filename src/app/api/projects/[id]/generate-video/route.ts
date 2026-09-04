@@ -42,6 +42,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    console.log("[Generate] task:", task_type, "prompt length:", prompt?.length);
+    console.log("[Generate] refs:", reference_urls?.length, "assets:", asset_urls);
+    console.log("[Generate] settings:", settings);
+
     const result = await routeGeneration(user.id, {
       taskType: task_type as TaskType,
       prompt,
@@ -53,6 +57,8 @@ export async function POST(request: Request) {
       resolution: settings?.resolution,
       aspectRatio: settings?.aspect_ratio,
     });
+
+    console.log("[Generate] result:", result);
 
     // Save generation record
     const genId = crypto.randomUUID();

@@ -56,7 +56,10 @@ function buildPlanFromContext(
     }
   }
 
-  // Separate by kind
+  // Separate by kind — uploaded images have kind "image", video frames have kind "video_frame"
+  const allImages = allAttachments.filter(
+    (a) => a.mimeType?.startsWith("image/")
+  );
   const characterImgs = allAttachments.filter(
     (a) => a.kind === "character" || a.customName?.toLowerCase().includes("character")
   );
@@ -72,6 +75,10 @@ function buildPlanFromContext(
   const videos = allAttachments.filter(
     (a) => a.mimeType?.startsWith("video/")
   );
+
+  // Use ALL images as references (video frames + uploaded images)
+  // The Director can figure out which is character, product, etc.
+  const refImageUrls = allImages.map((a) => a.url).filter(Boolean);
 
   // Find the most recent Director analysis message
   let analysisText = "";
@@ -99,13 +106,8 @@ function buildPlanFromContext(
     ? `Reproduce the reference video style and pacing. ${analysisText.replace(/\n+/g, " ").substring(0, 800)}`
     : `Create a professional video ad following the reference style. Duration: ${duration}s, format: ${aspectRatio}.`;
 
-  // Collect all reference image URLs
-  const refUrls = [
-    ...videoFrames.map((a) => a.url),
-    ...characterImgs.map((a) => a.url),
-    ...productImgs.map((a) => a.url),
-    ...locationImgs.map((a) => a.url),
-  ].filter(Boolean);
+  // Collect ALL image URLs as references (frames + uploaded images)
+  const refUrls = [...new Set(refImageUrls)];
 
   return {
     task_type: "reference_to_video",
@@ -238,40 +240,18 @@ export async function POST(
       generationPlan = await savePlan(projectId, planData);
     }
 
-    // If no plan in response, check if user is confirming
+    // If no plan in response, always build from context when user confirms
     if (!generationPlan) {
       const userText = (typeof content === "string" ? content : (content as any)?.text || "").toLowerCase();
-      const isConfirming = ["generate", "yes", "go ahead", "do it", "make it", "lets go", "let's go", "confirm"].some(
+      const isConfirming = ["generate", "yes", "go ahead", "do it", "make it", "lets go", "let's go", "confirm", "ok", "sure"].some(
         (w) => userText.includes(w)
       );
 
       if (isConfirming) {
-        // Try previous pending plan first
-        const lastPlan = await db
-          .select()
-          .from(generationPlans)
-          .where(eq(generationPlans.projectId, projectId))
-          .orderBy(desc(generationPlans.createdAt))
-          .limit(1);
-
-        if (lastPlan.length > 0 && lastPlan[0].status === "pending") {
-          const assetUrls = lastPlan[0].assetUrls as any;
-          const settings = lastPlan[0].settings as any;
-          generationPlan = {
-            id: lastPlan[0].id,
-            task_type: lastPlan[0].taskType,
-            prompt: lastPlan[0].prompt,
-            reference_urls: lastPlan[0].referenceUrls,
-            asset_urls: { character: assetUrls?.character || null, product: assetUrls?.product || null, location: assetUrls?.location || null },
-            settings: { duration: settings?.duration || 10, resolution: settings?.resolution || "720p", aspect_ratio: settings?.aspect_ratio || "16:9" },
-            estimated_credits: lastPlan[0].estimatedCredits || 0,
-          };
-        } else {
-          // No previous plan — build one from conversation context
-          console.log("[Building plan from conversation context]");
-          const contextPlan = buildPlanFromContext(history, projectId);
-          generationPlan = await savePlan(projectId, contextPlan);
-        }
+        // Always build from context — this is the most reliable path
+        console.log("[Building plan from context]");
+        const contextPlan = buildPlanFromContext(history, projectId);
+        generationPlan = await savePlan(projectId, contextPlan);
       }
     }
 

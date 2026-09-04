@@ -182,31 +182,44 @@ export function ChatWorkspace({
         if (hasFrames) continue;
 
         try {
-          const frames = await extractVideoFrames(videoAtt.url, 6);
-          for (let i = 0; i < frames.length; i++) {
-            const blob = fetch(frames[i].base64).then((r) => r.blob());
-            const file = new File([await blob], `frame-${i}.jpg`, { type: "image/jpeg" });
-            const fd = new FormData();
-            fd.append("file", file);
-            fd.append("projectId", projectId);
+          const framesPromise = extractVideoFrames(videoAtt.url, 6);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Frame extraction timeout")), 30000)
+          );
+          const frames = await Promise.race([framesPromise, timeoutPromise]);
 
-            const uploadRes = await fetch("/api/assets/upload", {
-              method: "POST",
-              credentials: "include",
-              body: fd,
-            });
-
-            if (uploadRes.ok) {
-              const data = await uploadRes.json();
-              enrichedAttachments.push({
-                assetId: data.assetId,
-                url: data.url,
-                name: `${videoAtt.name} frame at ${frames[i].timestamp.toFixed(1)}s`,
-                mimeType: "image/jpeg",
-                kind: "video_frame",
-                customName: `${videoAtt.customName || videoAtt.name} [${frames[i].timestamp.toFixed(1)}s]`,
+          const uploadPromises = frames.map(async (frame, i) => {
+            try {
+              const blob = await fetch(frame.base64).then((r) => r.blob());
+              const file = new File([blob], `frame-${i}.jpg`, { type: "image/jpeg" });
+              const fd = new FormData();
+              fd.append("file", file);
+              fd.append("projectId", projectId);
+              const uploadRes = await fetch("/api/assets/upload", {
+                method: "POST",
+                credentials: "include",
+                body: fd,
               });
+              if (uploadRes.ok) {
+                const data = await uploadRes.json();
+                return {
+                  assetId: data.assetId,
+                  url: data.url,
+                  name: `${videoAtt.name} frame at ${frame.timestamp.toFixed(1)}s`,
+                  mimeType: "image/jpeg",
+                  kind: "video_frame",
+                  customName: `${videoAtt.customName || videoAtt.name} [${frame.timestamp.toFixed(1)}s]`,
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to upload frame ${i}:`, err);
             }
+            return null;
+          });
+
+          const results = await Promise.all(uploadPromises);
+          for (const result of results) {
+            if (result) enrichedAttachments.push(result);
           }
         } catch (err) {
           console.error("Failed to extract frames from video:", err);

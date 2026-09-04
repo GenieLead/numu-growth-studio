@@ -6,15 +6,14 @@ import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
 export async function POST(request: Request) {
-  // Read body FIRST before auth consumes it
-  const body = await request.json();
-
-  // Auth only needs headers — create a minimal request-like object
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
+  // Clone request — better-auth consumes the body even from headers
+  const req2 = request.clone();
+  const session = await auth.api.getSession({ headers: req2.headers });
   const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Read body from original (not consumed yet because auth used the clone)
+  const body = await request.json();
 
   const {
     projectId,

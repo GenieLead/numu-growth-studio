@@ -144,11 +144,13 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Read body FIRST before auth
-  const body = await request.json();
-  const session = await auth.api.getSession({ headers: request.headers });
+  // Clone — better-auth consumes body even from headers
+  const req2 = request.clone();
+  const session = await auth.api.getSession({ headers: req2.headers });
   const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
 
   const { id: projectId } = await params;
   const { content } = body;

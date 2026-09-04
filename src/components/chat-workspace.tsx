@@ -269,9 +269,7 @@ export function ChatWorkspace({
         const errorMsg: Message = {
           id: `temp-${Date.now()}`,
           role: "assistant",
-          content: data.error.includes("Invalid URL")
-            ? "Image couldn't be analyzed. Try describing it in text instead."
-            : `Something went wrong. Try again.`,
+          content: `Error: ${data.error}`,
           createdAt: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, errorMsg]);
@@ -289,11 +287,11 @@ export function ChatWorkspace({
           setPendingPlan(data.generationPlan);
         }
       }
-    } catch {
+    } catch (err: any) {
       const errorMsg: Message = {
         id: `temp-${Date.now()}`,
         role: "assistant",
-        content: "Network error. Check your connection and try again.",
+        content: `Error: ${err?.message || err?.toString() || "Network error"}`,
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMsg]);

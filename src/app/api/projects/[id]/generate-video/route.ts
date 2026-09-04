@@ -1,18 +1,41 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { generations, projects } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { generations, projects, session } from "@/db/schema";
+import { eq, and, gt } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
+async function getUserFromRequest(request: Request) {
+  // Extract session token from cookie
+  const cookieHeader = request.headers.get("cookie") || "";
+  const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
+  if (!sessionMatch) return null;
+
+  const token = sessionMatch[1];
+  const now = new Date();
+
+  // Look up session in DB
+  const sessions = await db
+    .select()
+    .from(session)
+    .where(and(eq(session.token, token), gt(session.expiresAt, now)))
+    .limit(1);
+
+  if (sessions.length === 0) return null;
+
+  // Get user
+  const users = await db
+    .select()
+    .from((await import("@/db/schema")).user)
+    .where(eq((await import("@/db/schema")).user.id, sessions[0].userId))
+    .limit(1);
+
+  return users.length > 0 ? users[0] : null;
+}
+
 export async function POST(request: Request) {
-  // Clone request — better-auth consumes the body even from headers
-  const req2 = request.clone();
-  const session = await auth.api.getSession({ headers: req2.headers });
-  const user = session?.user || null;
+  const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Read body from original (not consumed yet because auth used the clone)
   const body = await request.json();
 
   const {

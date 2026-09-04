@@ -1,9 +1,21 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages, projects, generationPlans } from "@/db/schema";
-import { eq, asc, desc } from "drizzle-orm";
+import { messages, projects, generationPlans, session as sessionTable, user as userTable } from "@/db/schema";
+import { eq, asc, desc, gt, and } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
+
+async function getUserFromRequest(request: Request) {
+  const cookieHeader = request.headers.get("cookie") || "";
+  const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
+  if (!sessionMatch) return null;
+  const token = sessionMatch[1];
+  const now = new Date();
+  const sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, now))).limit(1);
+  if (sessions.length === 0) return null;
+  const users = await db.select().from(userTable).where(eq(userTable.id, sessions[0].userId)).limit(1);
+  return users.length > 0 ? users[0] : null;
+}
 
 function extractPlanFromText(text: string): any {
   const patterns = [
@@ -144,10 +156,7 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Clone — better-auth consumes body even from headers
-  const req2 = request.clone();
-  const session = await auth.api.getSession({ headers: req2.headers });
-  const user = session?.user || null;
+  const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();

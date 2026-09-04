@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { generations } from "@/db/schema";
+import { generations, projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { pollGeneration } from "@/lib/generation-router";
 import { getOpenRouterKey } from "@/lib/openrouter";
@@ -32,6 +32,17 @@ export async function GET(request: Request) {
   }
 
   const generation = gen[0];
+
+  // Verify project ownership
+  const project = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, generation.projectId))
+    .limit(1);
+  if (!project.length || project[0].userId !== user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const provider = generation.provider as "dashscope" | "openrouter";
 
   // Get the appropriate API key
@@ -49,7 +60,7 @@ export async function GET(request: Request) {
     apiKey = orKey;
   }
 
-  // Extract task ID from pollingUrl or openrouterJobId
+  // Extract task ID
   let taskId: string;
   if (provider === "dashscope") {
     taskId = generation.pollingUrl?.replace("dashscope:", "") || "";
@@ -64,14 +75,17 @@ export async function GET(request: Request) {
   try {
     const result = await pollGeneration(provider, apiKey, taskId);
 
-    // Update generation record
+    // Update generation record — persist video URL and cost
+    const updates: Record<string, unknown> = {
+      status: result.status === "completed" ? "completed" : result.status === "failed" ? "failed" : "processing",
+    };
+    if (result.error) updates.errorMessage = result.error;
+    if (result.status === "completed") updates.completedAt = new Date();
+    if ("cost" in result && result.cost) updates.actualCost = result.cost;
+
     await db
       .update(generations)
-      .set({
-        status: result.status === "completed" ? "completed" : result.status === "failed" ? "failed" : "processing",
-        ...(result.error ? { errorMessage: result.error } : {}),
-        ...(result.status === "completed" ? { completedAt: new Date() } : {}),
-      })
+      .set(updates)
       .where(eq(generations.id, generationId));
 
     return NextResponse.json({

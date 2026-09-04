@@ -1,6 +1,7 @@
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages } from "@/db/schema";
+import { messages, projects } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
 
@@ -9,26 +10,33 @@ async function getSessionUser(request: Request) {
   return session?.user || null;
 }
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   const user = await getSessionUser(request);
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { id: projectId } = await params;
   const body = await request.json();
-  const { projectId, content } = body;
+  const { content } = body;
 
-  if (!projectId || !content) {
-    return Response.json({ error: "projectId and content required" }, { status: 400 });
+  if (!content) {
+    return NextResponse.json({ error: "content required" }, { status: 400 });
   }
 
-  // Save user message
-  const userMsgId = crypto.randomUUID();
-  await db.insert(messages).values({
-    id: userMsgId,
-    projectId,
-    role: "user",
-    content,
-    createdAt: new Date(),
-  });
+  // Verify project ownership
+  const project = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project.length || project[0].userId !== user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Note: User message is saved by the frontend via /messages endpoint
+  // We only need to fetch history and call the Director
 
   // Fetch full conversation history
   const history = await db
@@ -103,7 +111,6 @@ export async function POST(request: Request) {
     if (planMatch) {
       try {
         generationPlan = JSON.parse(planMatch[1]);
-        // Remove the plan block from displayed text
         responseText = responseText
           .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/, "")
           .trim();
@@ -112,7 +119,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Save assistant message (without the plan block)
+    // Save assistant message
     const assistantMsgId = crypto.randomUUID();
     await db.insert(messages).values({
       id: assistantMsgId,
@@ -122,15 +129,14 @@ export async function POST(request: Request) {
       createdAt: new Date(),
     });
 
-    return Response.json({
+    return NextResponse.json({
       text: responseText,
       model: response.model,
       messageId: assistantMsgId,
       generationPlan,
     });
-  } catch (error: any) {
-    return Response.json({
-      error: error.message || "Failed to get response",
-    }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to get response";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

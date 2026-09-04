@@ -86,8 +86,13 @@ export function ChatWorkspace({
   // Frame selection
   const [selectedFrame, setSelectedFrame] = useState<{ time: number; imageUrl: string } | null>(null);
 
+  // Refs for polling closure
+  const activeModelRef = useRef<string>("video");
+  const pollFailCountRef = useRef(0);
+
   useEffect(() => {
     fetchMessages();
+    fetchAudioTracks();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -139,6 +144,21 @@ export function ChatWorkspace({
       console.error("Failed to fetch messages:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAudioTracks = async () => {
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/audio/tracks?projectId=${projectId}`,
+        { credentials: "include" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setAudioTracks(data.tracks || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch audio tracks:", error);
     }
   };
 
@@ -261,6 +281,7 @@ export function ChatWorkspace({
         }
 
         const data = await res.json();
+        activeModelRef.current = data.model || "video";
         setActiveGeneration({
           generationId: data.generationId,
           provider: data.provider,
@@ -287,6 +308,7 @@ export function ChatWorkspace({
   const startPolling = useCallback(
     (generationId: string) => {
       if (pollRef.current) clearInterval(pollRef.current);
+      pollFailCountRef.current = 0;
 
       pollRef.current = setInterval(async () => {
         try {
@@ -295,8 +317,16 @@ export function ChatWorkspace({
             { credentials: "include" }
           );
 
-          if (!res.ok) return;
+          if (!res.ok) {
+            pollFailCountRef.current++;
+            if (pollFailCountRef.current > 10) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              setActiveGeneration(null);
+            }
+            return;
+          }
 
+          pollFailCountRef.current = 0;
           const data = await res.json();
 
           setActiveGeneration((prev) =>
@@ -314,14 +344,13 @@ export function ChatWorkspace({
             if (pollRef.current) clearInterval(pollRef.current);
 
             if (data.status === "completed" && data.videoUrl) {
-              // Add video result as a message
               const resultMsg: Message = {
                 id: `gen-${Date.now()}`,
                 role: "assistant",
                 content: {
                   type: "generation_result",
                   videoUrl: data.videoUrl,
-                  model: activeGeneration?.model || "video",
+                  model: activeModelRef.current,
                 },
                 createdAt: new Date().toISOString(),
               };
@@ -339,11 +368,15 @@ export function ChatWorkspace({
             setActiveGeneration(null);
           }
         } catch {
-          // Poll error — keep trying
+          pollFailCountRef.current++;
+          if (pollFailCountRef.current > 10) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setActiveGeneration(null);
+          }
         }
       }, 5000);
     },
-    [projectId, activeGeneration?.model]
+    [projectId]
   );
 
   const handleCancelGeneration = useCallback(() => {

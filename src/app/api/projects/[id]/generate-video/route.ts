@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { generations } from "@/db/schema";
+import { generations, projects } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
-import { getOpenRouterKey } from "@/lib/openrouter";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -29,6 +29,16 @@ export async function POST(request: Request) {
       { error: "projectId, task_type, and prompt required" },
       { status: 400 }
     );
+  }
+
+  // Verify project ownership
+  const project = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project.length || project[0].userId !== user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   try {

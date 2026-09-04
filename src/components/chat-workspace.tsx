@@ -6,7 +6,8 @@ import { ChatMessage } from "@/components/chat-message";
 import { ChatComposer } from "@/components/chat-composer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Film, Loader2, Check, AlertCircle } from "lucide-react";
+import { ArrowLeft, Film, Loader2, Check, AlertCircle, Scissors } from "lucide-react";
+import { AudioTimeline } from "@/components/audio-timeline";
 
 interface Message {
   id: string;
@@ -75,6 +76,15 @@ export function ChatWorkspace({
   const [pendingPlan, setPendingPlan] = useState<GenerationPlan | null>(null);
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Audio state
+  const [audioTracks, setAudioTracks] = useState<any[]>([]);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Frame selection
+  const [selectedFrame, setSelectedFrame] = useState<{ time: number; imageUrl: string } | null>(null);
 
   useEffect(() => {
     fetchMessages();
@@ -342,6 +352,20 @@ export function ChatWorkspace({
     setPendingPlan(null);
   }, []);
 
+  const handleFrameSelect = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(video, 0, 0);
+      const imageUrl = canvas.toDataURL("image/png");
+      setSelectedFrame({ time: video.currentTime, imageUrl });
+    }
+  }, []);
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -386,11 +410,29 @@ export function ChatWorkspace({
                 {activeGeneration.status === "completed" && activeGeneration.videoUrl ? (
                   <div>
                     <video
+                      ref={videoRef}
                       src={activeGeneration.videoUrl}
                       className="w-full rounded-lg mb-2"
                       controls
                       playsInline
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        setVideoCurrentTime(v.currentTime);
+                        setVideoDuration(v.duration || 0);
+                      }}
+                      onLoadedMetadata={(e) => {
+                        setVideoDuration(e.currentTarget.duration);
+                      }}
                     />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleFrameSelect}
+                      className="border-neutral-700 text-[10px] mb-2"
+                    >
+                      <Scissors className="h-3 w-3 mr-1" />
+                      Select Frame
+                    </Button>
                     <div className="flex items-center gap-2 text-xs text-neutral-400">
                       <Check className="h-3 w-3 text-green-500" />
                       <span>Complete</span>
@@ -474,6 +516,49 @@ export function ChatWorkspace({
                     Cancel
                   </Button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Audio Timeline */}
+          {audioTracks.length > 0 && (
+            <div className="py-2">
+              <AudioTimeline
+                tracks={audioTracks}
+                totalDuration={videoDuration}
+                currentTime={videoCurrentTime}
+              />
+            </div>
+          )}
+
+          {/* Selected Frame Preview */}
+          {selectedFrame && (
+            <div className="flex gap-3 py-2">
+              <div className="h-8 w-8 rounded-full bg-neutral-700 flex items-center justify-center shrink-0">
+                <Scissors className="h-4 w-4 text-white" />
+              </div>
+              <div className="bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 flex items-center gap-3">
+                <img
+                  src={selectedFrame.imageUrl}
+                  alt={`Frame at ${selectedFrame.time.toFixed(1)}s`}
+                  className="h-16 w-28 object-cover rounded"
+                />
+                <div>
+                  <p className="text-xs text-neutral-300">
+                    Frame at {selectedFrame.time.toFixed(1)}s
+                  </p>
+                  <p className="text-[10px] text-neutral-500">
+                    Selected for editing
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedFrame(null)}
+                  className="text-neutral-500 hover:text-neutral-300 text-[10px]"
+                >
+                  Clear
+                </Button>
               </div>
             </div>
           )}

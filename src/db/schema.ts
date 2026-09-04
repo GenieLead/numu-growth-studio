@@ -232,11 +232,37 @@ export const modelCatalogCache = pgTable("model_catalog_cache", {
   fetchedAt: timestamp("fetched_at").defaultNow().notNull(),
 });
 
+// ─── Audio Tracks ────────────────────────────────────────────────
+export const audioTracks = pgTable(
+  "audio_tracks",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    kind: text("kind").notNull(), // dialogue | voiceover | music | ambience | foley | sfx | impact
+    name: text("name"),
+    blobUrl: text("blob_url"),
+    blobPathname: text("blob_pathname"),
+    mimeType: text("mime_type").default("audio/wav"),
+    durationSec: real("duration_sec"),
+    startTimeSec: real("start_time_sec").default(0).notNull(),
+    endTimeSec: real("end_time_sec"),
+    volume: real("volume").default(1.0).notNull(),
+    fadeInMs: integer("fade_in_ms").default(300),
+    fadeOutMs: integer("fade_out_ms").default(300),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("audio_tracks_project_id_idx").on(table.projectId),
+  ]
+);
+
 // ─── Relations ───────────────────────────────────────────────────
 export const projectsRelations = relations(projects, ({ many }) => ({
   messages: many(messages),
   assets: many(projectAssets),
   generations: many(generations),
+  audioTracks: many(audioTracks),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
@@ -256,6 +282,13 @@ export const assetsRelations = relations(assets, ({ one }) => ({
 export const generationsRelations = relations(generations, ({ one }) => ({
   project: one(projects, {
     fields: [generations.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const audioTracksRelations = relations(audioTracks, ({ one }) => ({
+  project: one(projects, {
+    fields: [audioTracks.projectId],
     references: [projects.id],
   }),
 }));

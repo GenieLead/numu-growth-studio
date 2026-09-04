@@ -1,42 +1,24 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { generations, projects, session as sessionTable, user as userTable } from "@/db/schema";
-import { eq, and, gt } from "drizzle-orm";
+import { generations, projects } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
-import crypto from "crypto";
-
-const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
-
-async function getUserFromRequest(request: Request) {
-  const cookieHeader = request.headers.get("cookie") || "";
-  const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
-  if (!sessionMatch) return null;
-
-  const rawValue = sessionMatch[1];
-  const now = new Date();
-
-  // Try raw value first
-  let sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, rawValue), gt(sessionTable.expiresAt, now))).limit(1);
-
-  // If not found, try unsigning
-  if (sessions.length === 0 && rawValue.includes(".")) {
-    const value = rawValue.split(".")[0];
-    const expectedSig = crypto.createHmac("sha256", AUTH_SECRET).update(value).digest("base64url");
-    if (rawValue.split(".")[1] === expectedSig) {
-      sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, value), gt(sessionTable.expiresAt, now))).limit(1);
-    }
-  }
-
-  if (sessions.length === 0) return null;
-  const users = await db.select().from(userTable).where(eq(userTable.id, sessions[0].userId)).limit(1);
-  return users.length > 0 ? users[0] : null;
-}
 
 export async function POST(request: Request) {
-  const user = await getUserFromRequest(request);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  // Read body FIRST, then use auth on cloned request
   const body = await request.json();
+
+  let user: any = null;
+  try {
+    const sessionResponse = await auth.handler(request.clone());
+    const sessionData = await sessionResponse.json();
+    user = sessionData?.user || null;
+  } catch (e) {
+    console.error("[Generate auth error]:", e);
+  }
+
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const {
     projectId,

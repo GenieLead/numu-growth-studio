@@ -1,182 +1,27 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages, projects, generationPlans, session as sessionTable, user as userTable } from "@/db/schema";
-import { eq, asc, desc, gt, and } from "drizzle-orm";
+import { messages, projects, generationPlans } from "@/db/schema";
+import { eq, asc, desc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
-import crypto from "crypto";
-
-const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
-
-async function getUserFromRequest(request: Request) {
-  const cookieHeader = request.headers.get("cookie") || "";
-  const sessionMatch = cookieHeader.match(/better-auth\.session_token=([^;]+)/);
-  if (!sessionMatch) return null;
-
-  const rawValue = sessionMatch[1];
-  const now = new Date();
-
-  // Try raw value first (in case cookie is not signed)
-  let sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, rawValue), gt(sessionTable.expiresAt, now))).limit(1);
-
-  // If not found, try unsigning the cookie
-  if (sessions.length === 0 && rawValue.includes(".")) {
-    const parts = rawValue.split(".");
-    const value = parts[0];
-    const expectedSig = crypto.createHmac("sha256", AUTH_SECRET).update(value).digest("base64url");
-    if (parts[1] === expectedSig) {
-      sessions = await db.select().from(sessionTable).where(and(eq(sessionTable.token, value), gt(sessionTable.expiresAt, now))).limit(1);
-    }
-  }
-
-  if (sessions.length === 0) return null;
-  const users = await db.select().from(userTable).where(eq(userTable.id, sessions[0].userId)).limit(1);
-  return users.length > 0 ? users[0] : null;
-}
-
-function extractPlanFromText(text: string): any {
-  const patterns = [
-    /\{[\s\S]*?"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
-    /\{[\s\S]*?"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
-  ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      let braceCount = 0;
-      let endIdx = 0;
-      for (let i = 0; i < match[0].length; i++) {
-        if (match[0][i] === "{") braceCount++;
-        if (match[0][i] === "}") braceCount--;
-        if (braceCount === 0) { endIdx = i + 1; break; }
-      }
-      try {
-        return JSON.parse(match[0].substring(0, endIdx));
-      } catch { continue; }
-    }
-  }
-  return null;
-}
-
-function cleanResponseText(text: string): string {
-  return text
-    .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/g, "")
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/\{"task_type"[\s\S]*?\}/g, "")
-    .replace(/\{"tasktype"[\s\S]*?\}/g, "")
-    .replace(/<[^>]*generation[^>]*>/g, "")
-    .trim();
-}
-
-function buildPlanFromContext(
-  history: any[],
-  projectId: string
-): any {
-  // Gather all user-uploaded asset URLs from the conversation
-  const allAttachments: any[] = [];
-  const allTexts: string[] = [];
-
-  for (const msg of history) {
-    const c = msg.content as any;
-    if (typeof c === "object" && c !== null) {
-      if (c.text) allTexts.push(c.text);
-      if (c.attachments) allAttachments.push(...c.attachments);
-    } else if (typeof c === "string") {
-      allTexts.push(c);
-    }
-  }
-
-  // Separate by kind — uploaded images have kind "image", video frames have kind "video_frame"
-  const allImages = allAttachments.filter(
-    (a) => a.mimeType?.startsWith("image/")
-  );
-  const characterImgs = allAttachments.filter(
-    (a) => a.kind === "character" || a.customName?.toLowerCase().includes("character")
-  );
-  const productImgs = allAttachments.filter(
-    (a) => a.kind === "product" || a.customName?.toLowerCase().includes("product")
-  );
-  const locationImgs = allAttachments.filter(
-    (a) => a.kind === "location" || a.customName?.toLowerCase().includes("location")
-  );
-  const videoFrames = allAttachments.filter(
-    (a) => a.kind === "video_frame"
-  );
-  const videos = allAttachments.filter(
-    (a) => a.mimeType?.startsWith("video/")
-  );
-
-  // Use ALL images as references (video frames + uploaded images)
-  // The Director can figure out which is character, product, etc.
-  const refImageUrls = allImages.map((a) => a.url).filter(Boolean);
-
-  // Find the most recent Director analysis message
-  let analysisText = "";
-  for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i].role === "assistant") {
-      const content = history[i].content;
-      const text = typeof content === "string" ? content : (content as any)?.text || "";
-      if (text.length > 100) {
-        analysisText = text;
-        break;
-      }
-    }
-  }
-
-  // Build the prompt from context
-  const userText = allTexts.join(" ").toLowerCase();
-  const durationMatch = analysisText.match(/(\d+\.?\d*)\s*(?:second|sec|s\b)/i);
-  const duration = durationMatch ? parseFloat(durationMatch[1]) : 10;
-
-  const isVertical = userText.includes("vertical") || userText.includes("9:16") || userText.includes("portrait");
-  const aspectRatio = isVertical ? "9:16" : "16:9";
-
-  // Compose a detailed prompt from the analysis
-  const prompt = analysisText.length > 50
-    ? `Reproduce the reference video style and pacing. ${analysisText.replace(/\n+/g, " ").substring(0, 800)}`
-    : `Create a professional video ad following the reference style. Duration: ${duration}s, format: ${aspectRatio}.`;
-
-  // Collect ALL image URLs as references (frames + uploaded images)
-  const refUrls = [...new Set(refImageUrls)];
-
-  return {
-    task_type: "reference_to_video",
-    prompt,
-    reference_urls: refUrls,
-    asset_urls: {
-      character: characterImgs[0]?.url || null,
-      product: productImgs[0]?.url || null,
-      location: locationImgs[0]?.url || null,
-    },
-    settings: { duration, resolution: "720p", aspect_ratio: aspectRatio },
-    estimated_credits: 1.5,
-  };
-}
-
-async function savePlan(projectId: string, planData: any) {
-  const planId = crypto.randomUUID();
-  await db.insert(generationPlans).values({
-    id: planId,
-    projectId,
-    taskType: planData.task_type,
-    prompt: planData.prompt,
-    referenceUrls: planData.reference_urls as any,
-    assetUrls: planData.asset_urls as any,
-    settings: planData.settings as any,
-    estimatedCredits: planData.estimated_credits,
-    status: "pending",
-    createdAt: new Date(),
-  } as any);
-  return { id: planId, ...planData };
-}
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getUserFromRequest(request);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  // Read body FIRST, then use auth.handler on cloned request
   const body = await request.json();
+
+  let user: any = null;
+  try {
+    const sessionResponse = await auth.handler(request.clone());
+    const sessionData = await sessionResponse.json();
+    user = sessionData?.user || null;
+  } catch (e) {
+    console.error("[Chat auth error]:", e);
+  }
+
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: projectId } = await params;
   const { content } = body;
@@ -185,6 +30,7 @@ export async function POST(
     return NextResponse.json({ error: "content required" }, { status: 400 });
   }
 
+  // Verify project ownership
   const project = await db
     .select()
     .from(projects)
@@ -260,7 +106,7 @@ export async function POST(
         settings: {
           duration: rawPlan.settings?.duration || 10,
           resolution: rawPlan.settings?.resolution || "720p",
-          aspect_ratio: rawPlan.settings?.aspect_ratio || "16:9",
+          aspect_ratio: rawPlan.settings?.aspect_ratio || rawPlan.settings?.aspectratio || "16:9",
         },
         estimated_credits: rawPlan.estimated_credits || rawPlan.estimatedcredits || 0,
       };
@@ -275,7 +121,6 @@ export async function POST(
       );
 
       if (isConfirming) {
-        // Always build from context — this is the most reliable path
         console.log("[Building plan from context]");
         const contextPlan = buildPlanFromContext(history, projectId);
         generationPlan = await savePlan(projectId, contextPlan);
@@ -307,4 +152,102 @@ export async function POST(
     console.error("[Chat error]:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function extractPlanFromText(text: string): any {
+  const patterns = [
+    /\{[\s\S]*?"task_type"[\s\S]*?"prompt"[\s\S]*?\}/,
+    /\{[\s\S]*?"tasktype"[\s\S]*?"prompt"[\s\S]*?\}/,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let braceCount = 0;
+      let endIdx = 0;
+      for (let i = 0; i < match[0].length; i++) {
+        if (match[0][i] === "{") braceCount++;
+        if (match[0][i] === "}") braceCount--;
+        if (braceCount === 0) { endIdx = i + 1; break; }
+      }
+      try {
+        return JSON.parse(match[0].substring(0, endIdx));
+      } catch { continue; }
+    }
+  }
+  return null;
+}
+
+function cleanResponseText(text: string): string {
+  return text
+    .replace(/<generation_plan>[\s\S]*?<\/generation_plan>/g, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\{"task_type"[\s\S]*?\}/g, "")
+    .replace(/\{"tasktype"[\s\S]*?\}/g, "")
+    .replace(/<[^>]*generation[^>]*>/g, "")
+    .trim();
+}
+
+function buildPlanFromContext(history: any[], projectId: string): any {
+  const allAttachments: any[] = [];
+  const allTexts: string[] = [];
+
+  for (const msg of history) {
+    const c = msg.content as any;
+    if (typeof c === "object" && c !== null) {
+      if (c.text) allTexts.push(c.text);
+      if (c.attachments) allAttachments.push(...c.attachments);
+    } else if (typeof c === "string") {
+      allTexts.push(c);
+    }
+  }
+
+  const allImages = allAttachments.filter((a) => a.mimeType?.startsWith("image/"));
+  const userText = allTexts.join(" ").toLowerCase();
+
+  // Find analysis text from Director
+  let analysisText = "";
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "assistant") {
+      const content = history[i].content;
+      const text = typeof content === "string" ? content : (content as any)?.text || "";
+      if (text.length > 100) { analysisText = text; break; }
+    }
+  }
+
+  const durationMatch = analysisText.match(/(\d+\.?\d*)\s*(?:second|sec|s\b)/i);
+  const duration = durationMatch ? parseFloat(durationMatch[1]) : 10;
+  const isVertical = userText.includes("vertical") || userText.includes("9:16") || userText.includes("portrait");
+  const aspectRatio = isVertical ? "9:16" : "16:9";
+
+  const prompt = analysisText.length > 50
+    ? `Reproduce the reference video style and pacing. ${analysisText.replace(/\n+/g, " ").substring(0, 800)}`
+    : `Create a professional video ad following the reference style. Duration: ${duration}s, format: ${aspectRatio}.`;
+
+  const refUrls = [...new Set(allImages.map((a) => a.url).filter(Boolean))];
+
+  return {
+    task_type: "reference_to_video",
+    prompt,
+    reference_urls: refUrls,
+    asset_urls: { character: null, product: null, location: null },
+    settings: { duration, resolution: "720p", aspect_ratio: aspectRatio },
+    estimated_credits: 1.5,
+  };
+}
+
+async function savePlan(projectId: string, planData: any) {
+  const planId = crypto.randomUUID();
+  await db.insert(generationPlans).values({
+    id: planId,
+    projectId,
+    taskType: planData.task_type,
+    prompt: planData.prompt,
+    referenceUrls: planData.reference_urls as any,
+    assetUrls: planData.asset_urls as any,
+    settings: planData.settings as any,
+    estimatedCredits: planData.estimated_credits,
+    status: "pending",
+    createdAt: new Date(),
+  } as any);
+  return { id: planId, ...planData };
 }

@@ -54,7 +54,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const body = await request.json();
   const { role, content } = body;
 
   if (!role || !content) {

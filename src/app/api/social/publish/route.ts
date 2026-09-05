@@ -12,10 +12,18 @@ async function getSessionUser(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser(request);
+  const clonedRequest = request.clone();
+  let body: any;
+  try {
+    body = await clonedRequest.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const session = await auth.api.getSession({ headers: request.headers });
+  const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
   const { platform, assetId, caption, scheduleAt } = body;
 
   if (!platform || !assetId) {

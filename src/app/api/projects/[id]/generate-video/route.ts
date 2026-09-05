@@ -7,9 +7,14 @@ import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
 export async function POST(request: Request) {
   const clonedRequest = request.clone();
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await clonedRequest.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 
-  const session = await auth.api.getSession({ headers: clonedRequest.headers });
+  const session = await auth.api.getSession({ headers: request.headers });
   const user = session?.user || null;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -20,7 +25,14 @@ export async function POST(request: Request) {
     reference_urls,
     asset_urls,
     settings,
-  } = body;
+  } = body as {
+    projectId: string;
+    task_type: string;
+    prompt: string;
+    reference_urls?: string[];
+    asset_urls?: { character?: string; product?: string; location?: string };
+    settings?: { duration?: number; resolution?: string; aspect_ratio?: string };
+  };
 
   if (!projectId || !task_type || !prompt) {
     return NextResponse.json(
@@ -29,7 +41,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify project ownership
   const project = await db
     .select()
     .from(projects)

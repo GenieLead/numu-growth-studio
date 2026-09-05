@@ -13,7 +13,8 @@ async function getSessionUser(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser(request);
+  const clonedRequest = request.clone();
+  const user = await getSessionUser(clonedRequest);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const formData = await request.formData();

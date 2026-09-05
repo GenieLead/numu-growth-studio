@@ -8,7 +8,6 @@ import {
   real,
   index,
   uniqueIndex,
-  customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -285,21 +284,6 @@ export const brands = pgTable(
   (table) => [index("brands_user_id_idx").on(table.userId)]
 );
 
-const vector = customType<{ data: number[]; driverData: string }>({
-  dataType() {
-    return "vector(1536)";
-  },
-  toDriver(value: number[]): string {
-    return `[${value.join(",")}]`;
-  },
-  fromDriver(value: string): number[] {
-    return value
-      .slice(1, -1)
-      .split(",")
-      .map(Number);
-  },
-});
-
 // ─── Knowledge Items ─────────────────────────────────────────────
 export const knowledgeItems = pgTable(
   "knowledge_items",
@@ -310,7 +294,7 @@ export const knowledgeItems = pgTable(
     title: text("title").notNull(),
     rawAssetId: text("raw_asset_id"),
     textContent: text("text_content"),
-    embedding: vector("embedding"),
+    embedding: jsonb("embedding"),
     trustLevel: text("trust_level").notNull().default("user"), // user | verified | system
     metadata: jsonb("metadata"),
     deletedAt: timestamp("deleted_at"),

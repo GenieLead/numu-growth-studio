@@ -1,8 +1,22 @@
 import { db } from "@/db";
 import { knowledgeItems } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
-  type KnowledgeItem = Omit<typeof knowledgeItems.$inferSelect, "embedding">;
+type KnowledgeItem = typeof knowledgeItems.$inferSelect;
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
 
 export async function hybridSearch(params: {
   brandId: string;
@@ -12,116 +26,32 @@ export async function hybridSearch(params: {
 }): Promise<KnowledgeItem[]> {
   const { brandId, query, embedding, topK = 10 } = params;
 
-  const vectorLiteral = `[${embedding.join(",")}]`;
+  const allItems = await db
+    .select()
+    .from(knowledgeItems)
+    .where(and(eq(knowledgeItems.brandId, brandId), eq(knowledgeItems.deletedAt, null as any)));
 
-  const vectorResults = await db.execute(sql`
-    SELECT
-      id,
-      brand_id,
-      source_type,
-      title,
-      raw_asset_id,
-      text_content,
-      trust_level,
-      metadata,
-      deleted_at,
-      created_at,
-      1 - (embedding <=> ${vectorLiteral}::vector) AS vector_score
-    FROM knowledge_items
-    WHERE brand_id = ${brandId}
-      AND deleted_at IS NULL
-      AND embedding IS NOT NULL
-    ORDER BY embedding <=> ${vectorLiteral}::vector
-    LIMIT ${topK * 2}
-  `);
+  const scored = allItems.map((item) => {
+    const itemEmbedding = item.embedding as number[] | null;
+    const vectorScore = itemEmbedding ? cosineSimilarity(embedding, itemEmbedding) : 0;
 
-  const ftsResults = await db.execute(sql`
-    SELECT
-      id,
-      brand_id,
-      source_type,
-      title,
-      raw_asset_id,
-      text_content,
-      trust_level,
-      metadata,
-      deleted_at,
-      created_at,
-      ts_rank(
-        to_tsvector('english', coalesce(title, '') || ' ' || coalesce(text_content, '')),
-        plainto_tsquery('english', ${query})
-      ) AS fts_score
-    FROM knowledge_items
-    WHERE brand_id = ${brandId}
-      AND deleted_at IS NULL
-      AND (
-        to_tsvector('english', coalesce(title, '') || ' ' || coalesce(text_content, ''))
-        @@ plainto_tsquery('english', ${query})
-      )
-    ORDER BY fts_score DESC
-    LIMIT ${topK * 2}
-  `);
+    const text = `${item.title || ""} ${item.textContent || ""}`.toLowerCase();
+    const queryLower = query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/);
+    const matchCount = queryWords.filter((w) => text.includes(w)).length;
+    const ftsScore = queryWords.length > 0 ? matchCount / queryWords.length : 0;
 
-  const scores = new Map<
-    string,
-    { item: KnowledgeItem; vectorScore: number; ftsScore: number }
-  >();
+    return { item, vectorScore, ftsScore };
+  });
 
-  for (const row of vectorResults.rows) {
-    const id = row.id as string;
-    scores.set(id, {
-      item: {
-        id: row.id as string,
-        brandId: row.brand_id as string,
-        sourceType: row.source_type as string,
-        title: row.title as string,
-        rawAssetId: row.raw_asset_id as string | null,
-        textContent: row.text_content as string | null,
-        trustLevel: row.trust_level as string,
-        metadata: row.metadata as Record<string, unknown> | null,
-        deletedAt: row.deleted_at as Date | null,
-        createdAt: row.created_at as Date,
-      },
-      vectorScore: (row.vector_score as number) ?? 0,
-      ftsScore: 0,
-    });
-  }
-
-  for (const row of ftsResults.rows) {
-    const id = row.id as string;
-    const existing = scores.get(id);
-    if (existing) {
-      existing.ftsScore = (row.fts_score as number) ?? 0;
-    } else {
-      scores.set(id, {
-        item: {
-          id: row.id as string,
-          brandId: row.brand_id as string,
-          sourceType: row.source_type as string,
-          title: row.title as string,
-          rawAssetId: row.raw_asset_id as string | null,
-          textContent: row.text_content as string | null,
-          trustLevel: row.trust_level as string,
-          metadata: row.metadata as Record<string, unknown> | null,
-          deletedAt: row.deleted_at as Date | null,
-          createdAt: row.created_at as Date,
-        },
-        vectorScore: 0,
-        ftsScore: (row.fts_score as number) ?? 0,
-      });
-    }
-  }
-
-  const scored = Array.from(scores.values()).map((entry) => ({
+  const withRRF = scored.map((entry) => ({
     ...entry,
     rrfScore:
-      entry.vectorScore > 0
-        ? 1 / (60 + entry.vectorScore)
-        : 0 +
-          (entry.ftsScore > 0 ? 1 / (60 + entry.ftsScore) : 0),
+      (entry.vectorScore > 0 ? 1 / (60 + entry.vectorScore) : 0) +
+      (entry.ftsScore > 0 ? 1 / (60 + entry.ftsScore) : 0),
   }));
 
-  scored.sort((a, b) => b.rrfScore - a.rrfScore);
+  withRRF.sort((a, b) => b.rrfScore - a.rrfScore);
 
-  return scored.slice(0, topK).map((s) => s.item);
+  return withRRF.slice(0, topK).map((s) => s.item);
 }

@@ -23,10 +23,12 @@ async function openrouterFetch(apiKey: string, path: string, init: RequestInit =
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser(request);
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+  const clonedRequest = request.clone();
   const body = await request.json();
+
+  const session = await auth.api.getSession({ headers: clonedRequest.headers });
+  const user = session?.user || null;
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { projectId, modelId, prompt, duration, resolution, aspectRatio, generateAudio } = body;
 
   if (!projectId || !prompt) {

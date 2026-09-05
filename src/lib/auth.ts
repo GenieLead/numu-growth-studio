@@ -2,8 +2,10 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const auth = betterAuth({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  baseURL: appUrl,
   secret: process.env.BETTER_AUTH_SECRET || "fallback-secret-change-me",
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -17,7 +19,8 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
   trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    appUrl,
+    "https://*.vercel.app",
   ],
 });
 

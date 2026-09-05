@@ -61,6 +61,7 @@ export async function POST(request: Request) {
     url: proxyUrl,
     pathname: blob.pathname,
     kind,
+    category: kind,
     name: file.name,
     mimeType: file.type,
     size: file.size,

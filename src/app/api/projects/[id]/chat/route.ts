@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { messages, projects, generationPlans } from "@/db/schema";
-import { eq, asc, desc } from "drizzle-orm";
+import { messages, projects, generationPlans, brands } from "@/db/schema";
+import { eq, asc } from "drizzle-orm";
 import { callDirector, type ChatMessage, type ContentPart } from "@/lib/openrouter";
+import { buildDirectorPrompt, type DirectorBrandContext } from "@/lib/director-prompt";
+import { getBrandEntities } from "@/lib/director/entity-passport";
+import { inferExpertise, getExpertiseInstructions } from "@/lib/director/expertise-inference";
+import { loadSkills, getSkillPrompts } from "@/lib/director/skill-loader";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -33,6 +37,27 @@ export async function POST(
     .limit(1);
   if (!project.length || project[0].userId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  let brandContext: DirectorBrandContext | undefined;
+  let entityPassports: Awaited<ReturnType<typeof getBrandEntities>> | undefined;
+
+  if (project[0].brandId) {
+    const brand = await db
+      .select()
+      .from(brands)
+      .where(eq(brands.id, project[0].brandId))
+      .limit(1);
+    if (brand.length) {
+      brandContext = {
+        name: brand[0].name,
+        positioning: brand[0].positioning || undefined,
+        personality: brand[0].personality || undefined,
+        toneOfVoice: brand[0].toneOfVoice || undefined,
+        values: brand[0].values || undefined,
+      };
+      entityPassports = await getBrandEntities(project[0].brandId);
+    }
   }
 
   // Fetch conversation history
@@ -82,7 +107,18 @@ export async function POST(
   });
 
   try {
-    const response = await callDirector(user.id, openRouterMessages);
+    const userText = typeof content === "string" ? content : (content as any)?.text || "";
+    const userMessages = history
+      .filter((m) => m.role === "user")
+      .map((m) => (typeof m.content === "string" ? m.content : (m.content as any)?.text || ""));
+    const expertise = inferExpertise([...userMessages, userText]);
+    const expertiseInstructions = getExpertiseInstructions(expertise);
+    const activeSkills = loadSkills("", userText);
+    const skillPrompts = getSkillPrompts(activeSkills);
+
+    const systemPrompt = buildDirectorPrompt(brandContext, entityPassports) + expertiseInstructions + skillPrompts;
+
+    const response = await callDirector(user.id, openRouterMessages, systemPrompt);
     let responseText = response.text;
     let generationPlan = null;
 

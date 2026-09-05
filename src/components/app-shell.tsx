@@ -61,7 +61,7 @@ export function AppShell({ children }: AppShellProps) {
         <div className="flex items-center justify-between p-4">
           {!collapsed && (
             <Link href="/library" className="text-lg font-semibold tracking-tight">
-              NUMU
+              HAYK
             </Link>
           )}
           <Button

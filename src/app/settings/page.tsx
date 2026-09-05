@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Key, DollarSign, Check, X, ExternalLink } from "lucide-react";
+import { Key, DollarSign, Check, X, ExternalLink, Building2 } from "lucide-react";
+import { BrandSettings } from "@/components/brand/brand-settings";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const [budget, setBudget] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [brandId, setBrandId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/get-session", { credentials: "include" })
@@ -29,6 +31,10 @@ export default function SettingsPage() {
         } else {
           setUserName(data.user.name || data.user.email || "");
           fetchSettings();
+          fetch("/api/brands", { credentials: "include" })
+            .then((r) => r.json())
+            .then((d) => { if (d.brands?.length) setBrandId(d.brands[0].id); })
+            .catch(() => {});
         }
       })
       .catch(() => router.push("/login"));
@@ -180,6 +186,24 @@ export default function SettingsPage() {
                     {saving ? "Saving..." : "Save"}
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Separator className="bg-neutral-800" />
+
+            <Card className="bg-neutral-900 border-neutral-800">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Building2 className="h-4 w-4" /> Brand
+                </CardTitle>
+                <CardDescription>Manage your brand identity, knowledge base, and taste references.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {brandId ? (
+                  <BrandSettings brandId={brandId} />
+                ) : (
+                  <div className="text-sm text-neutral-400">No brand set up yet. Create one from the Library.</div>
+                )}
               </CardContent>
             </Card>
 

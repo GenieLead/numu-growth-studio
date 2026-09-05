@@ -8,6 +8,7 @@ import {
   real,
   index,
   uniqueIndex,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -80,6 +81,8 @@ export const projects = pgTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
+    brandId: text("brand_id"),
+    parentProjectId: text("parent_project_id"),
     title: text("title").notNull().default("Untitled"),
     status: text("status").notNull().default("draft"),
     productionGraph: jsonb("production_graph"),
@@ -115,8 +118,10 @@ export const assets = pgTable(
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     projectId: text("project_id"),
+    brandId: text("brand_id"),
     parentAssetId: text("parent_asset_id"),
     kind: text("kind").notNull(), // reference | character | product | location | image | video | audio
+    category: text("category"), // extended category for library filtering
     source: text("source").notNull(), // uploaded | generated | extracted
     name: text("name"),
     blobUrl: text("blob_url"),
@@ -127,6 +132,8 @@ export const assets = pgTable(
     durationSec: real("duration_sec"),
     metadata: jsonb("metadata"),
     approved: boolean("approved").default(false).notNull(),
+    libraryVisible: boolean("library_visible").default(true).notNull(),
+    checksum: text("checksum"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
   },
@@ -258,6 +265,155 @@ export const audioTracks = pgTable(
   ]
 );
 
+// ─── Brands ──────────────────────────────────────────────────────
+export const brands = pgTable(
+  "brands",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    positioning: text("positioning"),
+    personality: text("personality"),
+    visualSystem: text("visual_system"),
+    toneOfVoice: text("tone_of_voice"),
+    values: text("values"),
+    rules: jsonb("rules"), // { approvedClaims, forbiddenClaims, legalNotes }
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => [index("brands_user_id_idx").on(table.userId)]
+);
+
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "vector(1536)";
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string): number[] {
+    return value
+      .slice(1, -1)
+      .split(",")
+      .map(Number);
+  },
+});
+
+// ─── Knowledge Items ─────────────────────────────────────────────
+export const knowledgeItems = pgTable(
+  "knowledge_items",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id").notNull(),
+    sourceType: text("source_type").notNull(), // document | url | upload
+    title: text("title").notNull(),
+    rawAssetId: text("raw_asset_id"),
+    textContent: text("text_content"),
+    embedding: vector("embedding"),
+    trustLevel: text("trust_level").notNull().default("user"), // user | verified | system
+    metadata: jsonb("metadata"),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("knowledge_items_brand_id_idx").on(table.brandId)]
+);
+
+// ─── Taste References ────────────────────────────────────────────
+export const tasteReferences = pgTable(
+  "taste_references",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id").notNull(),
+    assetId: text("asset_id"),
+    url: text("url"),
+    roles: jsonb("roles"), // ["cinematography", "lighting", "motion"]
+    notes: text("notes"),
+    preferenceWeight: real("preference_weight").default(1.0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("taste_references_brand_id_idx").on(table.brandId)]
+);
+
+// ─── Entities ────────────────────────────────────────────────────
+export const entities = pgTable(
+  "entities",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id").notNull(),
+    type: text("type").notNull(), // character | product | location | costume | prop | voice | style
+    name: text("name").notNull(),
+    canonicalDescription: text("canonical_description"),
+    rules: jsonb("rules"), // consistency rules, approved angles, etc.
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("entities_brand_id_idx").on(table.brandId),
+    index("entities_type_idx").on(table.type),
+  ]
+);
+
+// ─── Entity Assets (junction) ────────────────────────────────────
+export const entityAssets = pgTable(
+  "entity_assets",
+  {
+    entityId: text("entity_id").notNull(),
+    assetId: text("asset_id").notNull(),
+    role: text("role").notNull(), // front | side | macro | reference | approved
+    approved: boolean("approved").default(true).notNull(),
+  },
+  (table) => [uniqueIndex("entity_assets_unique").on(table.entityId, table.assetId)]
+);
+
+// ─── Feedback Events ─────────────────────────────────────────────
+export const feedbackEvents = pgTable(
+  "feedback_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    projectId: text("project_id"),
+    assetId: text("asset_id"),
+    eventType: text("event_type").notNull(), // approve | reject | revision | publish | performance
+    reason: text("reason"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("feedback_events_user_id_idx").on(table.userId)]
+);
+
+// ─── Generation Plans ────────────────────────────────────────────
+
+// ─── Scenes ─────────────────────────────────────────────────────
+export const scenes = pgTable(
+  "scenes",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    orderIndex: integer("order_index").notNull(),
+    title: text("title"),
+    durationSec: real("duration_sec"),
+    state: jsonb("state"), // ContinuityBundle
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("scenes_project_id_idx").on(table.projectId)]
+);
+
+// ─── Shots ──────────────────────────────────────────────────────
+export const shots = pgTable(
+  "shots",
+  {
+    id: text("id").primaryKey(),
+    sceneId: text("scene_id").notNull(),
+    startSec: real("start_sec").notNull(),
+    endSec: real("end_sec").notNull(),
+    state: jsonb("state"),
+  },
+  (table) => [index("shots_scene_id_idx").on(table.sceneId)]
+);
+
 // ─── Generation Plans ────────────────────────────────────────────
 export const generationPlans = pgTable(
   "generation_plans",
@@ -276,6 +432,64 @@ export const generationPlans = pgTable(
   (table) => [index("generation_plans_project_id_idx").on(table.projectId)]
 );
 
+// ─── Social Posts ────────────────────────────────────────────────
+export const socialPosts = pgTable(
+  "social_posts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    projectId: text("project_id"),
+    platform: text("platform").notNull(),
+    externalId: text("external_id"),
+    caption: text("caption"),
+    assetUrl: text("asset_url"),
+    publishedAt: timestamp("published_at"),
+    objective: text("objective").default("engagement"),
+    status: text("status").default("draft"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("social_posts_user_id_idx").on(table.userId),
+    index("social_posts_platform_idx").on(table.platform),
+  ]
+);
+
+// ─── Performance Snapshots ────────────────────────────────────────
+export const performanceSnapshots = pgTable(
+  "performance_snapshots",
+  {
+    id: text("id").primaryKey(),
+    socialPostId: text("social_post_id").notNull(),
+    capturedAt: text("captured_at").notNull(),
+    metrics: jsonb("metrics").notNull(),
+    normalizedScore: real("normalized_score"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("performance_snapshots_social_post_id_idx").on(table.socialPostId),
+  ]
+);
+
+// ─── Autopilot Programs ────────────────────────────────────────
+export const autopilotPrograms = pgTable(
+  "autopilot_programs",
+  {
+    id: text("id").primaryKey(),
+    brandId: text("brand_id")
+      .notNull()
+      .references(() => brands.id, { onDelete: "cascade" }),
+    objective: text("objective").notNull(),
+    policy: jsonb("policy").notNull(),
+    budget: jsonb("budget").notNull(),
+    status: text("status").notNull().default("paused"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("autopilot_programs_brand_id_idx").on(table.brandId)]
+);
+
 // ─── Relations ───────────────────────────────────────────────────
 export const projectsRelations = relations(projects, ({ many }) => ({
   messages: many(messages),
@@ -283,6 +497,7 @@ export const projectsRelations = relations(projects, ({ many }) => ({
   generations: many(generations),
   audioTracks: many(audioTracks),
   generationPlans: many(generationPlans),
+  scenes: many(scenes),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
@@ -317,5 +532,33 @@ export const generationPlansRelations = relations(generationPlans, ({ one }) => 
   project: one(projects, {
     fields: [generationPlans.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const brandsRelations = relations(brands, ({ many }) => ({
+  knowledgeItems: many(knowledgeItems),
+  tasteReferences: many(tasteReferences),
+  entities: many(entities),
+  autopilotPrograms: many(autopilotPrograms),
+}));
+
+export const knowledgeItemsRelations = relations(knowledgeItems, ({ one }) => ({
+  brand: one(brands, {
+    fields: [knowledgeItems.brandId],
+    references: [brands.id],
+  }),
+}));
+
+export const tasteReferencesRelations = relations(tasteReferences, ({ one }) => ({
+  brand: one(brands, {
+    fields: [tasteReferences.brandId],
+    references: [brands.id],
+  }),
+}));
+
+export const entitiesRelations = relations(entities, ({ one }) => ({
+  brand: one(brands, {
+    fields: [entities.brandId],
+    references: [brands.id],
   }),
 }));

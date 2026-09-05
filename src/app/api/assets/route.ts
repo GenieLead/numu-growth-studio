@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { assets } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -15,11 +15,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("projectId");
+  const category = searchParams.get("category");
 
-  let query = db.select().from(assets).where(eq(assets.userId, user.id)).orderBy(desc(assets.createdAt));
+  const whereClause = category
+    ? and(eq(assets.userId, user.id), eq(assets.category, category))
+    : eq(assets.userId, user.id);
 
-  // We'll filter in JS since drizzle where chaining is complex
-  const allAssets = await db.select().from(assets).where(eq(assets.userId, user.id)).orderBy(desc(assets.createdAt));
+  const allAssets = await db.select().from(assets).where(whereClause).orderBy(desc(assets.createdAt));
 
   const filtered = projectId
     ? allAssets.filter((a) => a.projectId === projectId)
@@ -36,13 +38,14 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { id, name, kind, approved } = body;
+  const { id, name, kind, approved, category } = body;
   if (!id) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
 
   const updates: any = {};
   if (name !== undefined) updates.name = name;
   if (kind !== undefined) updates.kind = kind;
   if (approved !== undefined) updates.approved = approved;
+  if (category !== undefined) updates.category = category;
 
   await db.update(assets).set(updates).where(eq(assets.id, id));
   return NextResponse.json({ success: true });

@@ -16,9 +16,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NUMU — AI Production Studio",
+  title: "HAYK — AI Creative Director",
   description:
-    "Create high-quality brand images and videos through one intelligent conversation.",
+    "The studio lens between imagination and fascination.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

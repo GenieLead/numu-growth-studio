@@ -55,7 +55,7 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-semibold">Welcome back</CardTitle>
           <CardDescription className="text-neutral-400">
-            Sign in to your NUMU account
+            Sign in to your HAYK account
           </CardDescription>
         </CardHeader>
         <CardContent>

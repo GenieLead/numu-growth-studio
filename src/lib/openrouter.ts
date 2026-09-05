@@ -37,14 +37,15 @@ export async function getOpenRouterKey(userId: string): Promise<string | null> {
 
 export async function callDirector(
   userId: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  systemPrompt?: string
 ): Promise<DirectorResponse> {
   const apiKey = await getOpenRouterKey(userId);
   if (!apiKey) throw new Error("OpenRouter key not connected");
 
   const systemMessage: ChatMessage = {
     role: "system",
-    content: DIRECTOR_SYSTEM_PROMPT,
+    content: systemPrompt || DIRECTOR_SYSTEM_PROMPT,
   };
 
   const allMessages = [systemMessage, ...messages];
@@ -55,7 +56,7 @@ export async function callDirector(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-      "X-Title": "NUMU Director",
+      "X-Title": "HAYK Director",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
@@ -96,7 +97,7 @@ export async function analyzeImage(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-      "X-Title": "NUMU Director",
+      "X-Title": "HAYK Director",
     },
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",

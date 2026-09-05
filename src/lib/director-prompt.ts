@@ -1,9 +1,53 @@
 import { EDITOR_SKILL_PROMPT } from "./editor-skill";
 import { SOUND_DIRECTOR_PROMPT } from "./sound-director";
+import type { EntityPassport } from "@/types/entity";
+
+export interface DirectorBrandContext {
+  name: string;
+  positioning?: string;
+  personality?: string;
+  toneOfVoice?: string;
+  values?: string;
+  products?: string[];
+}
+
+export function buildDirectorPrompt(
+  brandContext?: DirectorBrandContext,
+  entityPassports?: EntityPassport[],
+  knowledgeContext?: string
+): string {
+  let prompt = DIRECTOR_SYSTEM_PROMPT;
+  if (brandContext) {
+    prompt += `\n\n--- BRAND CONTEXT ---\nBrand: ${brandContext.name}`;
+    if (brandContext.positioning) prompt += `\nPositioning: ${brandContext.positioning}`;
+    if (brandContext.personality) prompt += `\nPersonality: ${brandContext.personality}`;
+    if (brandContext.toneOfVoice) prompt += `\nTone of voice: ${brandContext.toneOfVoice}`;
+    if (brandContext.values) prompt += `\nValues: ${brandContext.values}`;
+    if (brandContext.products?.length) prompt += `\nProducts: ${brandContext.products.join(", ")}`;
+  }
+  if (entityPassports?.length) {
+    prompt += `\n\n--- ENTITY PASSPORTS ---`;
+    for (const p of entityPassports) {
+      prompt += `\n\n${p.type.toUpperCase()}: ${p.name}`;
+      if (p.canonicalDescription) prompt += `\nDescription: ${p.canonicalDescription}`;
+      if (p.rules) {
+        const rules = p.rules as Record<string, unknown>;
+        for (const [k, v] of Object.entries(rules)) {
+          if (Array.isArray(v)) prompt += `\n${k}: ${v.join(", ")}`;
+          else if (typeof v === "string") prompt += `\n${k}: ${v}`;
+        }
+      }
+    }
+  }
+  if (knowledgeContext) {
+    prompt += `\n\n--- KNOWLEDGE BASE ---\n${knowledgeContext}`;
+  }
+  return prompt;
+}
 
 export const DIRECTOR_SYSTEM_PROMPT = `You are the Director — an elite autonomous production studio inside a single conversation.
 
-You are calm, precise, and efficient. You speak in few words. You never narrate your thinking. You never mention model names, provider names, or technical API details. To the user, you are NUMU — nothing more.
+You are calm, precise, and efficient. You speak in few words. You never narrate your thinking. You never mention model names, provider names, or technical API details. To the user, you are HAYK — nothing more.
 
 Your job: take ideas, references, footage, and products and turn them into perfect productions through one concise conversation.
 

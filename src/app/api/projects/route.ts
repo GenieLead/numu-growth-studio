@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { projects, messages } from "@/db/schema";
-import { eq, desc, isNull } from "drizzle-orm";
+import { eq, desc, isNull, and } from "drizzle-orm";
 
 async function getSessionUser(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
@@ -13,10 +13,17 @@ export async function GET(request: Request) {
   const user = await getSessionUser(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { searchParams } = new URL(request.url);
+  const brandId = searchParams.get("brandId");
+
+  const whereClause = brandId
+    ? and(eq(projects.userId, user.id), eq(projects.brandId, brandId))
+    : eq(projects.userId, user.id);
+
   const userProjects = await db
     .select()
     .from(projects)
-    .where(eq(projects.userId, user.id))
+    .where(whereClause)
     .orderBy(desc(projects.updatedAt));
 
   // Filter out soft-deleted projects
@@ -29,7 +36,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { title, duplicateFromId } = body;
+  const { title, duplicateFromId, remixFromId } = body;
 
   if (duplicateFromId) {
     const source = await db.select().from(projects).where(eq(projects.id, duplicateFromId)).limit(1);
@@ -60,6 +67,29 @@ export async function POST(request: Request) {
         createdAt: m.createdAt,
       });
     }
+
+    const project = await db.select().from(projects).where(eq(projects.id, newId)).limit(1);
+    return NextResponse.json({ project: project[0] });
+  }
+
+  if (remixFromId) {
+    const source = await db.select().from(projects).where(eq(projects.id, remixFromId)).limit(1);
+    if (source.length === 0) return NextResponse.json({ error: "Source not found" }, { status: 404 });
+
+    const newId = crypto.randomUUID();
+    const now = new Date();
+
+    await db.insert(projects).values({
+      id: newId,
+      userId: user.id,
+      title: `${source[0].title} (remix)`,
+      status: "draft",
+      productionGraph: source[0].productionGraph,
+      parentProjectId: source[0].id,
+      creditsSpent: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     const project = await db.select().from(projects).where(eq(projects.id, newId)).limit(1);
     return NextResponse.json({ project: project[0] });

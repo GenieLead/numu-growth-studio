@@ -56,7 +56,7 @@ export default function SignupPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-semibold">Create account</CardTitle>
           <CardDescription className="text-neutral-400">
-            Start creating with NUMU
+            Start creating with HAYK
           </CardDescription>
         </CardHeader>
         <CardContent>

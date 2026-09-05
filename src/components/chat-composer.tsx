@@ -7,20 +7,28 @@ import { ReferenceCard, type UploadedFile, type ReferenceKind } from "@/componen
 import { VoiceInput } from "@/components/voice-input";
 import { VideoTrimmer } from "@/components/video-trimmer";
 
+interface Entity {
+  id: string;
+  type: string;
+  name: string;
+}
+
 interface ChatComposerProps {
   onSend: (message: string, attachments?: UploadedFile[]) => void;
   disabled?: boolean;
   projectId?: string;
+  brandId?: string;
   initialAttach?: { assetId: string; url: string; name: string; mimeType: string; kind: string; multi?: { assetId: string; url: string; name: string; mimeType: string; kind: string }[] } | null;
 }
 
-export function ChatComposer({ onSend, disabled, projectId, initialAttach }: ChatComposerProps) {
+export function ChatComposer({ onSend, disabled, projectId, brandId, initialAttach }: ChatComposerProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [showAtMenu, setShowAtMenu] = useState(false);
+  const [atMenuOpen, setAtMenuOpen] = useState(false);
   const [atFilter, setAtFilter] = useState("");
   const [trimmerVideo, setTrimmerVideo] = useState<{ url: string; name: string; index: number } | null>(null);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const MAX_VIDEO_DURATION = 30;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -42,6 +50,14 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
     }
   }, [initialAttach]);
 
+  useEffect(() => {
+    if (!brandId) return;
+    fetch(`/api/entities?brandId=${brandId}`, { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setEntities(data.entities || []))
+      .catch(() => setEntities([]));
+  }, [brandId]);
+
   const namedRefs = attachments.filter((a) => a.customName);
 
   // @-mention detection
@@ -51,13 +67,13 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
     const cursorPos = el.selectionStart;
     const textBeforeCursor = message.slice(0, cursorPos);
     const atMatch = textBeforeCursor.match(/@(\w*)$/);
-    if (atMatch && namedRefs.length > 0) {
-      setShowAtMenu(true);
+    if (atMatch && (namedRefs.length > 0 || entities.length > 0)) {
+      setAtMenuOpen(true);
       setAtFilter(atMatch[1].toLowerCase());
     } else {
-      setShowAtMenu(false);
+      setAtMenuOpen(false);
     }
-  }, [message, namedRefs.length]);
+  }, [message, namedRefs.length, entities.length]);
 
   const insertAtMention = (name: string) => {
     const el = textareaRef.current;
@@ -67,7 +83,7 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
     const textAfterCursor = message.slice(cursorPos);
     const newBefore = textBeforeCursor.replace(/@\w*$/, `@${name} `);
     setMessage(newBefore + textAfterCursor);
-    setShowAtMenu(false);
+    setAtMenuOpen(false);
     setTimeout(() => {
       el.selectionStart = el.selectionEnd = newBefore.length;
       el.focus();
@@ -233,6 +249,12 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
     r.customName.toLowerCase().includes(atFilter)
   );
 
+  const filteredEntities = entities.filter((e) =>
+    e.name.toLowerCase().includes(atFilter)
+  );
+
+  const showAtMenu = (filteredRefs.length > 0 || filteredEntities.length > 0) && atMenuOpen;
+
   return (
     <div
       className="border-t border-neutral-800 bg-neutral-950 p-4"
@@ -254,7 +276,7 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
       )}
 
       {/* @-mention menu */}
-      {showAtMenu && filteredRefs.length > 0 && (
+      {showAtMenu && (
         <div className="max-w-3xl mx-auto mb-2">
           <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-1 shadow-lg">
             {filteredRefs.map((ref) => (
@@ -265,6 +287,16 @@ export function ChatComposer({ onSend, disabled, projectId, initialAttach }: Cha
               >
                 <span className="text-accent-lime text-xs font-medium">@{ref.customName}</span>
                 <span className="text-neutral-500 text-[10px]">{ref.kind}</span>
+              </button>
+            ))}
+            {filteredEntities.map((entity) => (
+              <button
+                key={entity.id}
+                onClick={() => insertAtMention(entity.name)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 rounded text-left hover:bg-neutral-700 transition-colors"
+              >
+                <span className="text-accent-lime text-xs font-medium">@{entity.name}</span>
+                <span className="text-neutral-500 text-[10px]">{entity.type}</span>
               </button>
             ))}
           </div>

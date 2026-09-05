@@ -5,17 +5,25 @@ import { generations, projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { routeGeneration, type TaskType } from "@/lib/generation-router";
 
+async function getUserFromRequest(request: Request) {
+  try {
+    const session = await auth.api.getSession({ headers: request.headers });
+    return session?.user || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
-  const clonedRequest = request.clone();
+  const bodyText = await request.text();
   let body: Record<string, unknown>;
   try {
-    body = await clonedRequest.json();
+    body = JSON.parse(bodyText);
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const session = await auth.api.getSession({ headers: request.headers });
-  const user = session?.user || null;
+  const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const {
@@ -25,14 +33,7 @@ export async function POST(request: Request) {
     reference_urls,
     asset_urls,
     settings,
-  } = body as {
-    projectId: string;
-    task_type: string;
-    prompt: string;
-    reference_urls?: string[];
-    asset_urls?: { character?: string; product?: string; location?: string };
-    settings?: { duration?: number; resolution?: string; aspect_ratio?: string };
-  };
+  } = body as Record<string, any>;
 
   if (!projectId || !task_type || !prompt) {
     return NextResponse.json(
